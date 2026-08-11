@@ -1,18 +1,17 @@
 -- ============================================================
 --  MYTHIC-ROLE-FRUIT
 --  Loader GUI + Pro Admin Bar + Mythical-Only Gacha
---  Paste this into your executor and run.
+--  Paste this into your executor and run. (Delta ready)
 -- ============================================================
 
--- Section 0: Optional remote-loader entry (embedding by default)
--- loadstring(game:HttpGet("YOUR_RAW_URL_HERE"))()
-
 -- ============================================================
--- Section 1: Compatibility bootstrap
+-- Section 1: Compatibility bootstrap + re-run guard
 -- ============================================================
 
 local genv = getgenv or _G
-if genv.PRO_ADMIN_LOADED then return end
+if genv.PRO_ADMIN_LOADED then
+	print("[MythicFruit] Re-run detected - rebuilding GUI")
+end
 genv.PRO_ADMIN_LOADED = true
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -86,803 +85,799 @@ if not player then
 	player = Players.LocalPlayer
 end
 local playerGui = cloneref(player:FindFirstChildWhichIsA("PlayerGui") or player:WaitForChild("PlayerGui", 10))
-local COREGUI = CoreGuiService or playerGui
+
+-- Destroy any previous GUI so re-running always works
+pcall(function()
+	local containers = {}
+	local okCore, core = pcall(game.GetService, game, "CoreGui")
+	if okCore and core then table.insert(containers, core) end
+	if playerGui then table.insert(containers, playerGui) end
+	for _, c in ipairs(containers) do
+		local old = c:FindFirstChild("MythicAdminGui")
+		if old then old:Destroy() end
+	end
+end)
+
+-- ============================================================
+-- Section 1b: Hardened GUI parent selection
+-- ============================================================
 
 local PARENT
+local parentUsed = "none"
 do
-	local function randomString()
-		local len = math.random(10, 20)
-		local t = {}
-		for i = 1, len do
-			t[i] = string.char(math.random(32, 126))
+	local ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "MythicAdminGui"
+	ScreenGui.ResetOnSpawn = false
+	ScreenGui.DisplayOrder = 999999999
+
+	local function tryParent(target)
+		if target then
+			local ok = pcall(function()
+				ScreenGui.Parent = target
+			end)
+			return ok and ScreenGui.Parent ~= nil
 		end
-		return table.concat(t)
+		return false
 	end
-	local MAX_DISPLAY_ORDER = 1.7976931348623157e308
-	local hiddenUI = get_hidden_gui or gethui
-	if hiddenUI then
-		local main = Instance.new("ScreenGui")
-		main.Name = randomString()
-		main.ResetOnSpawn = false
-		main.DisplayOrder = MAX_DISPLAY_ORDER
-		main.Parent = hiddenUI()
-		PARENT = main
-	elseif (not is_sirhurt_closure) and syn and syn.protect_gui then
-		local main = Instance.new("ScreenGui")
-		main.Name = randomString()
-		main.ResetOnSpawn = false
-		main.DisplayOrder = MAX_DISPLAY_ORDER
-		syn.protect_gui(main)
-		main.Parent = COREGUI
-		PARENT = main
-	elseif COREGUI and COREGUI:FindFirstChild("RobloxGui") then
-		PARENT = COREGUI.RobloxGui
-	else
-		local main = Instance.new("ScreenGui")
-		main.Name = randomString()
-		main.ResetOnSpawn = false
-		main.DisplayOrder = MAX_DISPLAY_ORDER
-		main.Parent = COREGUI
-		PARENT = main
-	end
-end
 
-local THEME = {
-	dark   = Color3.fromRGB(35, 15, 50),
-	darker = Color3.fromRGB(20, 10, 30),
-	light  = Color3.fromRGB(55, 25, 80),
-	accent = Color3.fromRGB(0, 255, 230),
-	purple = Color3.fromRGB(180, 100, 255),
-	text   = Color3.fromRGB(210, 180, 255),
-	white  = Color3.fromRGB(255, 255, 255),
-	red    = Color3.fromRGB(255, 100, 100),
-	black  = Color3.fromRGB(0, 0, 0),
-}
-
-local function addCorner(parent, radius)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius or 6)
-	c.Parent = parent
-end
-
-local function addStroke(parent, color, thickness)
-	local s = Instance.new("UIStroke")
-	s.Color = color or THEME.accent
-	s.Thickness = thickness or 1
-	s.Parent = parent
-end
-
--- ============================================================
--- Section 2: Mythical-Only Gacha Engine
--- ============================================================
-
-local HIGH_TIER_POOL = {
-	{ Name = "Gravity",   Rarity = "Mythical", BaseWeight = 8 },
-	{ Name = "Mammoth",   Rarity = "Mythical", BaseWeight = 7 },
-	{ Name = "T-Rex",     Rarity = "Mythical", BaseWeight = 6 },
-	{ Name = "Dough",     Rarity = "Mythical", BaseWeight = 5 },
-	{ Name = "Shadow",    Rarity = "Mythical", BaseWeight = 5 },
-	{ Name = "Venom",     Rarity = "Mythical", BaseWeight = 4 },
-	{ Name = "Gas",       Rarity = "Mythical", BaseWeight = 4 },
-	{ Name = "Spirit",    Rarity = "Mythical", BaseWeight = 3 },
-	{ Name = "Tiger",     Rarity = "Mythical", BaseWeight = 3 },
-	{ Name = "Yeti",      Rarity = "Mythical", BaseWeight = 2 },
-	{ Name = "Kitsune",   Rarity = "Mythical", BaseWeight = 1 },
-	{ Name = "Control",   Rarity = "Mythical", BaseWeight = 1 },
-	{ Name = "Dragon",    Rarity = "Mythical", BaseWeight = 1 },
-}
-
-local LUCK_MULTIPLIER = 100
-local currentLuck = 1 * LUCK_MULTIPLIER
-local ROLL_COST = 100000
-local localBeli = 1000000
-local inventory = {}
-
-local function rollFruit()
-	local adjustedPool = {}
-	local totalWeight = 0
-	for _, fruit in ipairs(HIGH_TIER_POOL) do
-		local weight = fruit.BaseWeight * currentLuck
-		totalWeight = totalWeight + weight
-		table.insert(adjustedPool, { Name = fruit.Name, Rarity = fruit.Rarity, Weight = weight })
-	end
-	local randomRoll = math.random() * totalWeight
-	local weightCounter = 0
-	for _, fruit in ipairs(adjustedPool) do
-		weightCounter = weightCounter + fruit.Weight
-		if randomRoll <= weightCounter then
-			return fruit
+	local gethuiFunc = typeof(gethui) == "function" and gethui or (typeof(get_hidden_gui) == "function" and get_hidden_gui or nil)
+	if gethuiFunc then
+		local ok, hui = pcall(gethuiFunc)
+		if ok and hui and tryParent(hui) then
+			parentUsed = "gethui"
 		end
 	end
-	return HIGH_TIER_POOL[1]
+	if not ScreenGui.Parent and syn and syn.protect_gui then
+		pcall(function()
+			syn.protect_gui(ScreenGui)
+			if CoreGuiService then ScreenGui.Parent = CoreGuiService end
+		end)
+		if ScreenGui.Parent then parentUsed = "syn.protect_gui" end
+	end
+	if not ScreenGui.Parent and CoreGuiService and tryParent(CoreGuiService) then
+		parentUsed = "CoreGui"
+	end
+	if not ScreenGui.Parent and CoreGuiService then
+		local robloxGui = CoreGuiService:FindFirstChild("RobloxGui")
+		if robloxGui and tryParent(robloxGui) then parentUsed = "CoreGui.RobloxGui" end
+	end
+	if not ScreenGui.Parent and playerGui and tryParent(playerGui) then
+		parentUsed = "PlayerGui"
+	end
+	if not ScreenGui.Parent then
+		local sg = pcall(game.GetService, game, "StarterGui") and CoreGuiService or StarterGui
+		if StarterGui and tryParent(StarterGui) then parentUsed = "StarterGui" end
+	end
+	PARENT = ScreenGui
+	print("[MythicFruit] GUI parented to: " .. parentUsed)
 end
 
--- ============================================================
--- Section 3: Admin Bar GUI
--- ============================================================
+-- Boot status label (visible on screen, shows live progress or the error)
+local bootStatus = Instance.new("TextLabel")
+bootStatus.Name = "BootStatus"
+bootStatus.Size = UDim2.new(0, 460, 0, 32)
+bootStatus.Position = UDim2.new(0.5, -230, 0, 12)
+bootStatus.BackgroundColor3 = Color3.fromRGB(20, 10, 30)
+bootStatus.BackgroundTransparency = 0.15
+bootStatus.TextColor3 = Color3.fromRGB(210, 180, 255)
+bootStatus.TextSize = 14
+bootStatus.Font = Enum.Font.GothamBold
+bootStatus.Text = "MYTHIC FRUIT SCRIPT - LOADING..."
+bootStatus.Parent = PARENT
+local bootCorner = Instance.new("UICorner")
+bootCorner.CornerRadius = UDim.new(0, 8)
+bootCorner.Parent = bootStatus
 
-local adminFrame = Instance.new("Frame")
-adminFrame.Name = "AdminFrame"
-adminFrame.Size = UDim2.new(0, 320, 0, 210)
-adminFrame.Position = UDim2.new(1, -340, 1, -230)
-adminFrame.BackgroundColor3 = THEME.dark
-adminFrame.BorderSizePixel = 0
-adminFrame.Active = true
-adminFrame.Draggable = true
-adminFrame.Parent = PARENT
-addCorner(adminFrame, 10)
-addStroke(adminFrame, THEME.accent, 2)
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, 0, 0, 35)
-titleLabel.BackgroundColor3 = THEME.light
-titleLabel.Text = "PRO ADMIN COMMAND SYSTEM"
-titleLabel.TextColor3 = THEME.accent
-titleLabel.TextSize = 14
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Parent = adminFrame
-addCorner(titleLabel, 10)
-
-local loaderBtn = Instance.new("TextButton")
-loaderBtn.Name = "LoaderButton"
-loaderBtn.Size = UDim2.new(0, 22, 0, 22)
-loaderBtn.Position = UDim2.new(1, -28, 0, 6)
-loaderBtn.BackgroundColor3 = THEME.dark
-loaderBtn.Text = "LD"
-loaderBtn.TextColor3 = THEME.accent
-loaderBtn.TextSize = 9
-loaderBtn.Font = Enum.Font.GothamBold
-loaderBtn.Parent = titleLabel
-addCorner(loaderBtn, 6)
-
-local invBtn = Instance.new("TextButton")
-invBtn.Name = "InvButton"
-invBtn.Size = UDim2.new(0, 22, 0, 22)
-invBtn.Position = UDim2.new(1, -54, 0, 6)
-invBtn.BackgroundColor3 = THEME.dark
-invBtn.Text = "INV"
-invBtn.TextColor3 = THEME.accent
-invBtn.TextSize = 8
-invBtn.Font = Enum.Font.GothamBold
-invBtn.Parent = titleLabel
-addCorner(invBtn, 6)
-
-local cmdBox = Instance.new("TextBox")
-cmdBox.Name = "CmdInput"
-cmdBox.Size = UDim2.new(1, -20, 0, 35)
-cmdBox.Position = UDim2.new(0, 10, 0, 50)
-cmdBox.BackgroundColor3 = THEME.darker
-cmdBox.Text = ""
-cmdBox.PlaceholderText = "Type command (e.g. ;speed 50)..."
-cmdBox.PlaceholderColor3 = THEME.purple
-cmdBox.TextColor3 = THEME.white
-cmdBox.TextSize = 13
-cmdBox.Font = Enum.Font.Gotham
-cmdBox.Parent = adminFrame
-addCorner(cmdBox, 6)
-addStroke(cmdBox, THEME.purple, 1)
-
-local outputLabel = Instance.new("TextLabel")
-outputLabel.Name = "Output"
-outputLabel.Size = UDim2.new(1, -20, 0, 80)
-outputLabel.Position = UDim2.new(0, 10, 0, 95)
-outputLabel.BackgroundColor3 = THEME.darker
-outputLabel.Text = "PRO Admin System Active.\nCreated by: " .. player.Name
-outputLabel.TextColor3 = THEME.text
-outputLabel.TextSize = 12
-outputLabel.Font = Enum.Font.Gotham
-outputLabel.TextWrapped = true
-outputLabel.TextXAlignment = Enum.TextXAlignment.Left
-outputLabel.TextYAlignment = Enum.TextYAlignment.Top
-outputLabel.Parent = adminFrame
-addCorner(outputLabel, 6)
-addStroke(outputLabel, THEME.purple, 1)
-
-local beliLabel = Instance.new("TextLabel")
-beliLabel.Name = "BeliLabel"
-beliLabel.Size = UDim2.new(1, -20, 0, 20)
-beliLabel.Position = UDim2.new(0, 10, 0, 185)
-beliLabel.BackgroundColor3 = THEME.light
-beliLabel.Text = "Beli: 1,000,000  |  Luck: 100x"
-beliLabel.TextColor3 = THEME.accent
-beliLabel.TextSize = 11
-beliLabel.Font = Enum.Font.Gotham
-beliLabel.Parent = adminFrame
-addCorner(beliLabel, 6)
-
-local function setOutput(text, color)
-	outputLabel.Text = text
-	outputLabel.TextColor3 = color or THEME.text
+local function setBoot(text, isError)
+	if bootStatus then
+		bootStatus.Text = text
+		bootStatus.TextColor3 = isError and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(0, 255, 230)
+	end
+	print("[MythicFruit] " .. text)
 end
 
--- ============================================================
--- Section 4: Script Loader GUI
--- ============================================================
+local outputLabel
+local buildOk, buildErr = pcall(function()
 
-local HISTORY_FOLDER = "MythicRole"
-local HISTORY_FILE = HISTORY_FOLDER .. "/history.json"
-local urlHistory = {}
+	setBoot("Bootstrap OK - building UI...")
 
-if isfile and readfile and writefile and makefolder and isfolder then
-	pcall(function()
-		if not isfolder(HISTORY_FOLDER) then makefolder(HISTORY_FOLDER) end
-		if isfile(HISTORY_FILE) then
-			local decoded = HttpService:JSONDecode(readfile(HISTORY_FILE))
-			if type(decoded) == "table" then urlHistory = decoded end
+	local THEME = {
+		dark   = Color3.fromRGB(35, 15, 50),
+		darker = Color3.fromRGB(20, 10, 30),
+		light  = Color3.fromRGB(55, 25, 80),
+		accent = Color3.fromRGB(0, 255, 230),
+		purple = Color3.fromRGB(180, 100, 255),
+		text   = Color3.fromRGB(210, 180, 255),
+		white  = Color3.fromRGB(255, 255, 255),
+		red    = Color3.fromRGB(255, 100, 100),
+		black  = Color3.fromRGB(0, 0, 0),
+	}
+
+	local function addCorner(parent, radius)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, radius or 6)
+		c.Parent = parent
+	end
+
+	local function addStroke(parent, color, thickness)
+		local s = Instance.new("UIStroke")
+		s.Color = color or THEME.accent
+		s.Thickness = thickness or 1
+		s.Parent = parent
+	end
+
+	-- ============================================================
+	-- Section 2: Mythical-Only Gacha Engine
+	-- ============================================================
+
+	local HIGH_TIER_POOL = {
+		{ Name = "Gravity",   Rarity = "Mythical", BaseWeight = 8 },
+		{ Name = "Mammoth",   Rarity = "Mythical", BaseWeight = 7 },
+		{ Name = "T-Rex",     Rarity = "Mythical", BaseWeight = 6 },
+		{ Name = "Dough",     Rarity = "Mythical", BaseWeight = 5 },
+		{ Name = "Shadow",    Rarity = "Mythical", BaseWeight = 5 },
+		{ Name = "Venom",     Rarity = "Mythical", BaseWeight = 4 },
+		{ Name = "Gas",       Rarity = "Mythical", BaseWeight = 4 },
+		{ Name = "Spirit",    Rarity = "Mythical", BaseWeight = 3 },
+		{ Name = "Tiger",     Rarity = "Mythical", BaseWeight = 3 },
+		{ Name = "Yeti",      Rarity = "Mythical", BaseWeight = 2 },
+		{ Name = "Kitsune",   Rarity = "Mythical", BaseWeight = 1 },
+		{ Name = "Control",   Rarity = "Mythical", BaseWeight = 1 },
+		{ Name = "Dragon",    Rarity = "Mythical", BaseWeight = 1 },
+	}
+
+	local LUCK_MULTIPLIER = 100
+	local currentLuck = 1 * LUCK_MULTIPLIER
+	local ROLL_COST = 100000
+	local localBeli = 1000000
+	local inventory = {}
+
+	local function rollFruit()
+		local adjustedPool = {}
+		local totalWeight = 0
+		for _, fruit in ipairs(HIGH_TIER_POOL) do
+			local weight = fruit.BaseWeight * currentLuck
+			totalWeight = totalWeight + weight
+			table.insert(adjustedPool, { Name = fruit.Name, Rarity = fruit.Rarity, Weight = weight })
 		end
-	end)
-end
-
-local function saveHistory()
-	if writefile then
-		pcall(function() writefile(HISTORY_FILE, HttpService:JSONEncode(urlHistory)) end)
+		local randomRoll = math.random() * totalWeight
+		local weightCounter = 0
+		for _, fruit in ipairs(adjustedPool) do
+			weightCounter = weightCounter + fruit.Weight
+			if randomRoll <= weightCounter then
+				return fruit
+			end
+		end
+		return HIGH_TIER_POOL[1]
 	end
-end
 
-local loaderFrame = Instance.new("Frame")
-loaderFrame.Name = "LoaderFrame"
-loaderFrame.Size = UDim2.new(0, 320, 0, 230)
-loaderFrame.Position = UDim2.new(1, -340, 1, -480)
-loaderFrame.BackgroundColor3 = THEME.dark
-loaderFrame.BorderSizePixel = 0
-loaderFrame.Active = true
-loaderFrame.Draggable = true
-loaderFrame.Visible = false
-loaderFrame.Parent = PARENT
-addCorner(loaderFrame, 10)
-addStroke(loaderFrame, THEME.purple, 2)
+	setBoot("Gacha engine ready")
 
-local loaderTitle = Instance.new("TextLabel")
-loaderTitle.Name = "Title"
-loaderTitle.Size = UDim2.new(1, 0, 0, 35)
-loaderTitle.BackgroundColor3 = THEME.light
-loaderTitle.Text = "IN-GAME SCRIPT LOADER"
-loaderTitle.TextColor3 = THEME.accent
-loaderTitle.TextSize = 14
-loaderTitle.Font = Enum.Font.GothamBold
-loaderTitle.Parent = loaderFrame
-addCorner(loaderTitle, 10)
+	-- ============================================================
+	-- Section 3: Admin Bar GUI
+	-- ============================================================
 
-local loaderClose = Instance.new("TextButton")
-loaderClose.Name = "CloseButton"
-loaderClose.Size = UDim2.new(0, 22, 0, 22)
-loaderClose.Position = UDim2.new(1, -28, 0, 6)
-loaderClose.BackgroundColor3 = THEME.dark
-loaderClose.Text = "X"
-loaderClose.TextColor3 = THEME.red
-loaderClose.TextSize = 12
-loaderClose.Font = Enum.Font.GothamBold
-loaderClose.Parent = loaderTitle
-addCorner(loaderClose, 6)
+	local adminFrame = Instance.new("Frame")
+	adminFrame.Name = "AdminFrame"
+	adminFrame.Size = UDim2.new(0, 320, 0, 210)
+	adminFrame.Position = UDim2.new(1, -340, 1, -230)
+	adminFrame.BackgroundColor3 = THEME.dark
+	adminFrame.BorderSizePixel = 0
+	adminFrame.Active = true
+	adminFrame.Draggable = true
+	adminFrame.Parent = PARENT
+	addCorner(adminFrame, 10)
+	addStroke(adminFrame, THEME.accent, 2)
 
-local urlBox = Instance.new("TextBox")
-urlBox.Name = "UrlInput"
-urlBox.Size = UDim2.new(1, -20, 0, 32)
-urlBox.Position = UDim2.new(0, 10, 0, 45)
-urlBox.BackgroundColor3 = THEME.darker
-urlBox.Text = ""
-urlBox.PlaceholderText = "Paste script URL here..."
-urlBox.PlaceholderColor3 = THEME.purple
-urlBox.TextColor3 = THEME.white
-urlBox.TextSize = 12
-urlBox.Font = Enum.Font.Gotham
-urlBox.Parent = loaderFrame
-addCorner(urlBox, 6)
-addStroke(urlBox, THEME.purple, 1)
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.Size = UDim2.new(1, 0, 0, 35)
+	titleLabel.BackgroundColor3 = THEME.light
+	titleLabel.Text = "PRO ADMIN COMMAND SYSTEM"
+	titleLabel.TextColor3 = THEME.accent
+	titleLabel.TextSize = 14
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.Parent = adminFrame
+	addCorner(titleLabel, 10)
 
-local executeBtn = Instance.new("TextButton")
-executeBtn.Name = "ExecuteButton"
-executeBtn.Size = UDim2.new(1, -20, 0, 36)
-executeBtn.Position = UDim2.new(0, 10, 0, 85)
-executeBtn.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
-executeBtn.Text = "EXECUTE"
-executeBtn.TextColor3 = THEME.white
-executeBtn.TextSize = 13
-executeBtn.Font = Enum.Font.GothamBold
-executeBtn.Parent = loaderFrame
-addCorner(executeBtn, 8)
+	local loaderBtn = Instance.new("TextButton")
+	loaderBtn.Name = "LoaderButton"
+	loaderBtn.Size = UDim2.new(0, 22, 0, 22)
+	loaderBtn.Position = UDim2.new(1, -28, 0, 6)
+	loaderBtn.BackgroundColor3 = THEME.dark
+	loaderBtn.Text = "LD"
+	loaderBtn.TextColor3 = THEME.accent
+	loaderBtn.TextSize = 9
+	loaderBtn.Font = Enum.Font.GothamBold
+	loaderBtn.Parent = titleLabel
+	addCorner(loaderBtn, 6)
 
-local loaderStatus = Instance.new("TextLabel")
-loaderStatus.Name = "Status"
-loaderStatus.Size = UDim2.new(1, -20, 0, 40)
-loaderStatus.Position = UDim2.new(0, 10, 0, 130)
-loaderStatus.BackgroundColor3 = THEME.darker
-loaderStatus.Text = "Status: Idle"
-loaderStatus.TextColor3 = THEME.text
-loaderStatus.TextSize = 12
-loaderStatus.Font = Enum.Font.Gotham
-loaderStatus.TextWrapped = true
-loaderStatus.TextXAlignment = Enum.TextXAlignment.Left
-loaderStatus.Parent = loaderFrame
-addCorner(loaderStatus, 6)
+	local invBtn = Instance.new("TextButton")
+	invBtn.Name = "InvButton"
+	invBtn.Size = UDim2.new(0, 22, 0, 22)
+	invBtn.Position = UDim2.new(1, -54, 0, 6)
+	invBtn.BackgroundColor3 = THEME.dark
+	invBtn.Text = "INV"
+	invBtn.TextColor3 = THEME.accent
+	invBtn.TextSize = 8
+	invBtn.Font = Enum.Font.GothamBold
+	invBtn.Parent = titleLabel
+	addCorner(invBtn, 6)
 
-local historyLabel = Instance.new("TextLabel")
-historyLabel.Name = "HistoryLabel"
-historyLabel.Size = UDim2.new(1, -20, 0, 18)
-historyLabel.Position = UDim2.new(0, 10, 0, 176)
-historyLabel.BackgroundColor3 = THEME.dark
-historyLabel.Text = "History:"
-historyLabel.TextColor3 = THEME.purple
-historyLabel.TextSize = 11
-historyLabel.Font = Enum.Font.GothamBold
-historyLabel.TextXAlignment = Enum.TextXAlignment.Left
-historyLabel.Parent = loaderFrame
+	local cmdBox = Instance.new("TextBox")
+	cmdBox.Name = "CmdInput"
+	cmdBox.Size = UDim2.new(1, -20, 0, 35)
+	cmdBox.Position = UDim2.new(0, 10, 0, 50)
+	cmdBox.BackgroundColor3 = THEME.darker
+	cmdBox.Text = ""
+	cmdBox.PlaceholderText = "Type command (e.g. ;speed 50)..."
+	cmdBox.PlaceholderColor3 = THEME.purple
+	cmdBox.TextColor3 = THEME.white
+	cmdBox.TextSize = 13
+	cmdBox.Font = Enum.Font.Gotham
+	cmdBox.Parent = adminFrame
+	addCorner(cmdBox, 6)
+	addStroke(cmdBox, THEME.purple, 1)
 
-local historyList = Instance.new("ScrollingFrame")
-historyList.Name = "HistoryList"
-historyList.Size = UDim2.new(1, -20, 0, 34)
-historyList.Position = UDim2.new(0, 10, 0, 194)
-historyList.BackgroundTransparency = 1
-historyList.BorderSizePixel = 0
-historyList.ScrollBarThickness = 4
-historyList.CanvasSize = UDim2.new(0, 0, 0, 0)
-historyList.Parent = loaderFrame
+	outputLabel = Instance.new("TextLabel")
+	outputLabel.Name = "Output"
+	outputLabel.Size = UDim2.new(1, -20, 0, 80)
+	outputLabel.Position = UDim2.new(0, 10, 0, 95)
+	outputLabel.BackgroundColor3 = THEME.darker
+	outputLabel.Text = "PRO Admin System Active.\nCreated by: " .. player.Name
+	outputLabel.TextColor3 = THEME.text
+	outputLabel.TextSize = 12
+	outputLabel.Font = Enum.Font.Gotham
+	outputLabel.TextWrapped = true
+	outputLabel.TextXAlignment = Enum.TextXAlignment.Left
+	outputLabel.TextYAlignment = Enum.TextYAlignment.Top
+	outputLabel.Parent = adminFrame
+	addCorner(outputLabel, 6)
+	addStroke(outputLabel, THEME.purple, 1)
 
-local historyLayout = Instance.new("UIListLayout")
-historyLayout.SortOrder = Enum.SortOrder.LayoutOrder
-historyLayout.Padding = UDim.new(0, 2)
-historyLayout.Parent = historyList
+	local beliLabel = Instance.new("TextLabel")
+	beliLabel.Name = "BeliLabel"
+	beliLabel.Size = UDim2.new(1, -20, 0, 20)
+	beliLabel.Position = UDim2.new(0, 10, 0, 185)
+	beliLabel.BackgroundColor3 = THEME.light
+	beliLabel.Text = "Beli: 1,000,000  |  Luck: 100x"
+	beliLabel.TextColor3 = THEME.accent
+	beliLabel.TextSize = 11
+	beliLabel.Font = Enum.Font.Gotham
+	beliLabel.Parent = adminFrame
+	addCorner(beliLabel, 6)
 
-local function refreshHistory()
-	for _, child in ipairs(historyList:GetChildren()) do
-		if child:IsA("TextButton") then child:Destroy() end
+	local function setOutput(text, color)
+		outputLabel.Text = text
+		outputLabel.TextColor3 = color or THEME.text
 	end
-	for i, url in ipairs(urlHistory) do
-		local entry = Instance.new("TextButton")
-		entry.Name = "Entry" .. i
-		entry.Size = UDim2.new(1, 0, 0, 20)
-		entry.BackgroundColor3 = THEME.darker
-		entry.Text = url
-		entry.TextColor3 = THEME.text
-		entry.TextSize = 10
-		entry.Font = Enum.Font.Gotham
-		entry.TextTruncate = Enum.TextTruncate.AtEnd
-		entry.TextXAlignment = Enum.TextXAlignment.Left
-		entry.Parent = historyList
-		addCorner(entry, 4)
-		entry.MouseButton1Click:Connect(function()
-			urlBox.Text = url
+
+	setBoot("Admin bar built")
+
+	-- ============================================================
+	-- Section 4: Script Loader GUI
+	-- ============================================================
+
+	local HISTORY_FOLDER = "MythicRole"
+	local HISTORY_FILE = HISTORY_FOLDER .. "/history.json"
+	local urlHistory = {}
+
+	if isfile and readfile and writefile and makefolder and isfolder then
+		pcall(function()
+			if not isfolder(HISTORY_FOLDER) then makefolder(HISTORY_FOLDER) end
+			if isfile(HISTORY_FILE) then
+				local decoded = HttpService:JSONDecode(readfile(HISTORY_FILE))
+				if type(decoded) == "table" then urlHistory = decoded end
+			end
 		end)
 	end
-	historyList.CanvasSize = UDim2.new(0, 0, 0, #urlHistory * 22)
-end
-refreshHistory()
 
-local function executeUrl(url)
-	if not url or url == "" then
-		loaderStatus.Text = "Status: No URL provided"
-		loaderStatus.TextColor3 = THEME.red
-		return
-	end
-	loaderStatus.Text = "Status: Fetching script..."
-	loaderStatus.TextColor3 = THEME.accent
-	local fetchSuccess, chunk = pcall(function()
-		return game:HttpGet(url)
-	end)
-	if not fetchSuccess then
-		loaderStatus.Text = "Status: Failed to fetch URL"
-		loaderStatus.TextColor3 = THEME.red
-		return
-	end
-	local loadSuccess, loaded = pcall(loadstring, chunk)
-	if not loadSuccess then
-		loaderStatus.Text = "Status: Compile error"
-		loaderStatus.TextColor3 = THEME.red
-		return
-	end
-	local runSuccess, runErr = pcall(loaded)
-	if runSuccess then
-		loaderStatus.Text = "Status: Executed successfully!"
-		loaderStatus.TextColor3 = THEME.accent
-		local seen = {}
-		local clean = {}
-		table.insert(urlHistory, 1, url)
-		for _, u in ipairs(urlHistory) do
-			if not seen[u] then
-				seen[u] = true
-				table.insert(clean, u)
-			end
+	local function saveHistory()
+		if writefile then
+			pcall(function() writefile(HISTORY_FILE, HttpService:JSONEncode(urlHistory)) end)
 		end
-		while #clean > 10 do table.remove(clean) end
-		urlHistory = clean
-		saveHistory()
-		refreshHistory()
-	else
-		loaderStatus.Text = "Status: Runtime error\n" .. tostring(runErr)
-		loaderStatus.TextColor3 = THEME.red
 	end
-end
 
-executeBtn.MouseButton1Click:Connect(function()
-	executeUrl(urlBox.Text)
-end)
-urlBox.FocusLost:Connect(function(enterPressed)
-	if enterPressed then executeUrl(urlBox.Text) end
-end)
-loaderClose.MouseButton1Click:Connect(function()
+	local loaderFrame = Instance.new("Frame")
+	loaderFrame.Name = "LoaderFrame"
+	loaderFrame.Size = UDim2.new(0, 320, 0, 230)
+	loaderFrame.Position = UDim2.new(1, -340, 1, -480)
+	loaderFrame.BackgroundColor3 = THEME.dark
+	loaderFrame.BorderSizePixel = 0
+	loaderFrame.Active = true
+	loaderFrame.Draggable = true
 	loaderFrame.Visible = false
-end)
+	loaderFrame.Parent = PARENT
+	addCorner(loaderFrame, 10)
+	addStroke(loaderFrame, THEME.purple, 2)
 
--- ============================================================
--- Section 5: Inventory GUI
--- ============================================================
+	local loaderTitle = Instance.new("TextLabel")
+	loaderTitle.Name = "Title"
+	loaderTitle.Size = UDim2.new(1, 0, 0, 35)
+	loaderTitle.BackgroundColor3 = THEME.light
+	loaderTitle.Text = "IN-GAME SCRIPT LOADER"
+	loaderTitle.TextColor3 = THEME.accent
+	loaderTitle.TextSize = 14
+	loaderTitle.Font = Enum.Font.GothamBold
+	loaderTitle.Parent = loaderFrame
+	addCorner(loaderTitle, 10)
 
-local invFrame = Instance.new("Frame")
-invFrame.Name = "InventoryFrame"
-invFrame.Size = UDim2.new(0, 200, 0, 210)
-invFrame.Position = UDim2.new(1, -560, 1, -230)
-invFrame.BackgroundColor3 = THEME.dark
-invFrame.BorderSizePixel = 0
-invFrame.Active = true
-invFrame.Draggable = true
-invFrame.Visible = false
-invFrame.Parent = PARENT
-addCorner(invFrame, 10)
-addStroke(invFrame, THEME.purple, 2)
+	local loaderClose = Instance.new("TextButton")
+	loaderClose.Name = "CloseButton"
+	loaderClose.Size = UDim2.new(0, 22, 0, 22)
+	loaderClose.Position = UDim2.new(1, -28, 0, 6)
+	loaderClose.BackgroundColor3 = THEME.dark
+	loaderClose.Text = "X"
+	loaderClose.TextColor3 = THEME.red
+	loaderClose.TextSize = 12
+	loaderClose.Font = Enum.Font.GothamBold
+	loaderClose.Parent = loaderTitle
+	addCorner(loaderClose, 6)
 
-local invTitle = Instance.new("TextLabel")
-invTitle.Name = "Title"
-invTitle.Size = UDim2.new(1, 0, 0, 35)
-invTitle.BackgroundColor3 = THEME.light
-invTitle.Text = "INVENTORY (0)"
-invTitle.TextColor3 = THEME.accent
-invTitle.TextSize = 14
-invTitle.Font = Enum.Font.GothamBold
-invTitle.Parent = invFrame
-addCorner(invTitle, 10)
+	local urlBox = Instance.new("TextBox")
+	urlBox.Name = "UrlInput"
+	urlBox.Size = UDim2.new(1, -20, 0, 32)
+	urlBox.Position = UDim2.new(0, 10, 0, 45)
+	urlBox.BackgroundColor3 = THEME.darker
+	urlBox.Text = ""
+	urlBox.PlaceholderText = "Paste script URL here..."
+	urlBox.PlaceholderColor3 = THEME.purple
+	urlBox.TextColor3 = THEME.white
+	urlBox.TextSize = 12
+	urlBox.Font = Enum.Font.Gotham
+	urlBox.Parent = loaderFrame
+	addCorner(urlBox, 6)
+	addStroke(urlBox, THEME.purple, 1)
 
-local invClose = Instance.new("TextButton")
-invClose.Name = "CloseButton"
-invClose.Size = UDim2.new(0, 22, 0, 22)
-invClose.Position = UDim2.new(1, -28, 0, 6)
-invClose.BackgroundColor3 = THEME.dark
-invClose.Text = "X"
-invClose.TextColor3 = THEME.red
-invClose.TextSize = 12
-invClose.Font = Enum.Font.GothamBold
-invClose.Parent = invTitle
-addCorner(invClose, 6)
+	local executeBtn = Instance.new("TextButton")
+	executeBtn.Name = "ExecuteButton"
+	executeBtn.Size = UDim2.new(1, -20, 0, 36)
+	executeBtn.Position = UDim2.new(0, 10, 0, 85)
+	executeBtn.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
+	executeBtn.Text = "EXECUTE"
+	executeBtn.TextColor3 = THEME.white
+	executeBtn.TextSize = 13
+	executeBtn.Font = Enum.Font.GothamBold
+	executeBtn.Parent = loaderFrame
+	addCorner(executeBtn, 8)
 
-local invList = Instance.new("ScrollingFrame")
-invList.Name = "List"
-invList.Size = UDim2.new(1, -20, 1, -55)
-invList.Position = UDim2.new(0, 10, 0, 45)
-invList.BackgroundTransparency = 1
-invList.BorderSizePixel = 0
-invList.ScrollBarThickness = 4
-invList.CanvasSize = UDim2.new(0, 0, 0, 0)
-invList.Parent = invFrame
+	local loaderStatus = Instance.new("TextLabel")
+	loaderStatus.Name = "Status"
+	loaderStatus.Size = UDim2.new(1, -20, 0, 40)
+	loaderStatus.Position = UDim2.new(0, 10, 0, 130)
+	loaderStatus.BackgroundColor3 = THEME.darker
+	loaderStatus.Text = "Status: Idle"
+	loaderStatus.TextColor3 = THEME.text
+	loaderStatus.TextSize = 12
+	loaderStatus.Font = Enum.Font.Gotham
+	loaderStatus.TextWrapped = true
+	loaderStatus.TextXAlignment = Enum.TextXAlignment.Left
+	loaderStatus.Parent = loaderFrame
+	addCorner(loaderStatus, 6)
 
-local invLayout = Instance.new("UIListLayout")
-invLayout.SortOrder = Enum.SortOrder.LayoutOrder
-invLayout.Padding = UDim.new(0, 2)
-invLayout.Parent = invList
+	local historyLabel = Instance.new("TextLabel")
+	historyLabel.Name = "HistoryLabel"
+	historyLabel.Size = UDim2.new(1, -20, 0, 18)
+	historyLabel.Position = UDim2.new(0, 10, 0, 176)
+	historyLabel.BackgroundColor3 = THEME.dark
+	historyLabel.Text = "History:"
+	historyLabel.TextColor3 = THEME.purple
+	historyLabel.TextSize = 11
+	historyLabel.Font = Enum.Font.GothamBold
+	historyLabel.TextXAlignment = Enum.TextXAlignment.Left
+	historyLabel.Parent = loaderFrame
 
-local function refreshInventory()
-	for _, child in ipairs(invList:GetChildren()) do
-		if child:IsA("TextLabel") then child:Destroy() end
+	local historyList = Instance.new("ScrollingFrame")
+	historyList.Name = "HistoryList"
+	historyList.Size = UDim2.new(1, -20, 0, 34)
+	historyList.Position = UDim2.new(0, 10, 0, 194)
+	historyList.BackgroundTransparency = 1
+	historyList.BorderSizePixel = 0
+	historyList.ScrollBarThickness = 4
+	historyList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	historyList.Parent = loaderFrame
+
+	local historyLayout = Instance.new("UIListLayout")
+	historyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	historyLayout.Padding = UDim.new(0, 2)
+	historyLayout.Parent = historyList
+
+	local function refreshHistory()
+		for _, child in ipairs(historyList:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		for i, url in ipairs(urlHistory) do
+			local entry = Instance.new("TextButton")
+			entry.Name = "Entry" .. i
+			entry.Size = UDim2.new(1, 0, 0, 20)
+			entry.BackgroundColor3 = THEME.darker
+			entry.Text = url
+			entry.TextColor3 = THEME.text
+			entry.TextSize = 10
+			entry.Font = Enum.Font.Gotham
+			entry.TextTruncate = Enum.TextTruncate.AtEnd
+			entry.TextXAlignment = Enum.TextXAlignment.Left
+			entry.Parent = historyList
+			addCorner(entry, 4)
+			entry.MouseButton1Click:Connect(function()
+				urlBox.Text = url
+			end)
+		end
+		historyList.CanvasSize = UDim2.new(0, 0, 0, #urlHistory * 22)
 	end
-	for i, name in ipairs(inventory) do
-		local row = Instance.new("TextLabel")
-		row.Name = "Row" .. i
-		row.Size = UDim2.new(1, 0, 0, 20)
-		row.BackgroundColor3 = THEME.darker
-		row.Text = i .. ". " .. name .. " [MYTHICAL]"
-		row.TextColor3 = THEME.text
-		row.TextSize = 11
-		row.Font = Enum.Font.Gotham
-		row.TextXAlignment = Enum.TextXAlignment.Left
-		row.Parent = invList
-		addCorner(row, 4)
-	end
-	invList.CanvasSize = UDim2.new(0, 0, 0, #inventory * 22)
-	invTitle.Text = "INVENTORY (" .. #inventory .. ")"
-end
+	refreshHistory()
 
-invClose.MouseButton1Click:Connect(function()
+	local function executeUrl(url)
+		if not url or url == "" then
+			loaderStatus.Text = "Status: No URL provided"
+			loaderStatus.TextColor3 = THEME.red
+			return
+		end
+		loaderStatus.Text = "Status: Fetching script..."
+		loaderStatus.TextColor3 = THEME.accent
+		local fetchSuccess, chunk = pcall(function()
+			return game:HttpGet(url)
+		end)
+		if not fetchSuccess then
+			loaderStatus.Text = "Status: Failed to fetch URL"
+			loaderStatus.TextColor3 = THEME.red
+			return
+		end
+		local loadSuccess, loaded = pcall(loadstring, chunk)
+		if not loadSuccess then
+			loaderStatus.Text = "Status: Compile error"
+			loaderStatus.TextColor3 = THEME.red
+			return
+		end
+		local runSuccess, runErr = pcall(loaded)
+		if runSuccess then
+			loaderStatus.Text = "Status: Executed successfully!"
+			loaderStatus.TextColor3 = THEME.accent
+			local seen = {}
+			local clean = {}
+			table.insert(urlHistory, 1, url)
+			for _, u in ipairs(urlHistory) do
+				if not seen[u] then
+					seen[u] = true
+					table.insert(clean, u)
+				end
+			end
+			while #clean > 10 do table.remove(clean) end
+			urlHistory = clean
+			saveHistory()
+			refreshHistory()
+		else
+			loaderStatus.Text = "Status: Runtime error\n" .. tostring(runErr)
+			loaderStatus.TextColor3 = THEME.red
+		end
+	end
+
+	executeBtn.MouseButton1Click:Connect(function()
+		executeUrl(urlBox.Text)
+	end)
+	urlBox.FocusLost:Connect(function(enterPressed)
+		if enterPressed then executeUrl(urlBox.Text) end
+	end)
+	loaderClose.MouseButton1Click:Connect(function()
+		loaderFrame.Visible = false
+	end)
+
+	setBoot("Script loader ready")
+
+	-- ============================================================
+	-- Section 5: Inventory GUI
+	-- ============================================================
+
+	local invFrame = Instance.new("Frame")
+	invFrame.Name = "InventoryFrame"
+	invFrame.Size = UDim2.new(0, 200, 0, 210)
+	invFrame.Position = UDim2.new(1, -560, 1, -230)
+	invFrame.BackgroundColor3 = THEME.dark
+	invFrame.BorderSizePixel = 0
+	invFrame.Active = true
+	invFrame.Draggable = true
 	invFrame.Visible = false
-end)
+	invFrame.Parent = PARENT
+	addCorner(invFrame, 10)
+	addStroke(invFrame, THEME.purple, 2)
 
--- ============================================================
--- Section 6: Commands & Handlers
--- ============================================================
+	local invTitle = Instance.new("TextLabel")
+	invTitle.Name = "Title"
+	invTitle.Size = UDim2.new(1, 0, 0, 35)
+	invTitle.BackgroundColor3 = THEME.light
+	invTitle.Text = "INVENTORY (0)"
+	invTitle.TextColor3 = THEME.accent
+	invTitle.TextSize = 14
+	invTitle.Font = Enum.Font.GothamBold
+	invTitle.Parent = invFrame
+	addCorner(invTitle, 10)
 
-loaderBtn.MouseButton1Click:Connect(function()
-	loaderFrame.Visible = not loaderFrame.Visible
-end)
-invBtn.MouseButton1Click:Connect(function()
-	invFrame.Visible = not invFrame.Visible
-end)
+	local invClose = Instance.new("TextButton")
+	invClose.Name = "CloseButton"
+	invClose.Size = UDim2.new(0, 22, 0, 22)
+	invClose.Position = UDim2.new(1, -28, 0, 6)
+	invClose.BackgroundColor3 = THEME.dark
+	invClose.Text = "X"
+	invClose.TextColor3 = THEME.red
+	invClose.TextSize = 12
+	invClose.Font = Enum.Font.GothamBold
+	invClose.Parent = invTitle
+	addCorner(invClose, 6)
 
-local backpack = player:WaitForChild("Backpack", 15) or Instance.new("Backpack")
+	local invList = Instance.new("ScrollingFrame")
+	invList.Name = "List"
+	invList.Size = UDim2.new(1, -20, 1, -55)
+	invList.Position = UDim2.new(0, 10, 0, 45)
+	invList.BackgroundTransparency = 1
+	invList.BorderSizePixel = 0
+	invList.ScrollBarThickness = 4
+	invList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	invList.Parent = invFrame
 
-local function createFruitTool(fruitName)
-	local tool = Instance.new("Tool")
-	tool.Name = fruitName
-	tool.RequiresHandle = false
-	tool.CanBeDropped = true
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(1.2, 1.2, 1.2)
-	handle.Material = Enum.Material.Neon
-	handle.Color = Color3.fromRGB(140, 50, 230)
-	handle.CanCollide = false
-	handle.CanQuery = false
-	handle.CanTouch = false
-	handle.Parent = tool
-	local fruitLabel = Instance.new("BillboardGui")
-	fruitLabel.Size = UDim2.new(0, 6, 0, 1.5)
-	fruitLabel.StudsOffset = Vector3.new(0, 1.5, 0)
-	fruitLabel.AlwaysOnTop = true
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 1, 0)
-	label.BackgroundTransparency = 1
-	label.Text = fruitName
-	label.TextColor3 = THEME.accent
-	label.TextStrokeTransparency = 0
-	label.TextSize = 14
-	label.Font = Enum.Font.GothamBold
-	label.Parent = fruitLabel
-	fruitLabel.Parent = handle
-	tool.Parent = backpack
-	return tool
-end
+	local invLayout = Instance.new("UIListLayout")
+	invLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	invLayout.Padding = UDim.new(0, 2)
+	invLayout.Parent = invList
 
-local function giveFruitToInventory(fruitName)
-	local found
-	for _, container in ipairs({ReplicatedStorage, workspace, player.StarterGear}) do
-		local asset = container:FindFirstChild(fruitName)
-		if asset then
-			found = asset
-			break
+	local function refreshInventory()
+		for _, child in ipairs(invList:GetChildren()) do
+			if child:IsA("TextLabel") then child:Destroy() end
 		end
-	end
-	if found then
-		local clone = found:Clone()
-		clone.Parent = backpack
-		return true
-	end
-	createFruitTool(fruitName)
-	return false
-end
-
-local function doGacha()
-	if localBeli < ROLL_COST then
-		setOutput("Insufficient Beli!\nCost: 100,000 | Balance: " .. tostring(localBeli), THEME.red)
-		return
-	end
-	localBeli = localBeli - ROLL_COST
-	local result = rollFruit()
-	table.insert(inventory, result.Name)
-	giveFruitToInventory(result.Name)
-	beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
-	setOutput("SPIN RESULT: " .. result.Name .. "\nRarity: " .. result.Rarity .. "\nGIVEN TO YOUR INVENTORY!", THEME.accent)
-	refreshInventory()
-end
-
-local function showInventory()
-	if #inventory == 0 then
-		setOutput("Inventory is empty.\nUse ;roll to spin!", THEME.text)
-	else
-		local lines = {}
 		for i, name in ipairs(inventory) do
-			table.insert(lines, i .. ". " .. name)
+			local row = Instance.new("TextLabel")
+			row.Name = "Row" .. i
+			row.Size = UDim2.new(1, 0, 0, 20)
+			row.BackgroundColor3 = THEME.darker
+			row.Text = i .. ". " .. name .. " [MYTHICAL]"
+			row.TextColor3 = THEME.text
+			row.TextSize = 11
+			row.Font = Enum.Font.Gotham
+			row.TextXAlignment = Enum.TextXAlignment.Left
+			row.Parent = invList
+			addCorner(row, 4)
 		end
-		setOutput("INVENTORY (" .. #inventory .. ")\n" .. table.concat(lines, "\n"), THEME.text)
+		invList.CanvasSize = UDim2.new(0, 0, 0, #inventory * 22)
+		invTitle.Text = "INVENTORY (" .. #inventory .. ")"
 	end
-end
 
-cmdBox.FocusLost:Connect(function(enterPressed)
-	if not enterPressed then return end
-	local text = cmdBox.Text
-	cmdBox.Text = ""
-	local command = text:lower()
+	invClose.MouseButton1Click:Connect(function()
+		invFrame.Visible = false
+	end)
 
-	if command:sub(1, 7) == ";speed " then
-		local speedVal = tonumber(text:sub(8))
-		if speedVal and player.Character and player.Character:FindFirstChild("Humanoid") then
-			player.Character.Humanoid.WalkSpeed = speedVal
-			setOutput("Command Executed:\nWalkSpeed set to " .. tostring(speedVal), THEME.accent)
-		else
-			setOutput("Invalid speed or no character.", THEME.red)
+	-- ============================================================
+	-- Section 6: Commands & Handlers
+	-- ============================================================
+
+	loaderBtn.MouseButton1Click:Connect(function()
+		loaderFrame.Visible = not loaderFrame.Visible
+	end)
+	invBtn.MouseButton1Click:Connect(function()
+		invFrame.Visible = not invFrame.Visible
+	end)
+
+	local backpack = player:WaitForChild("Backpack", 15) or Instance.new("Backpack")
+
+	local function createFruitTool(fruitName)
+		local tool = Instance.new("Tool")
+		tool.Name = fruitName
+		tool.RequiresHandle = false
+		tool.CanBeDropped = true
+		local handle = Instance.new("Part")
+		handle.Name = "Handle"
+		handle.Size = Vector3.new(1.2, 1.2, 1.2)
+		handle.Material = Enum.Material.Neon
+		handle.Color = Color3.fromRGB(140, 50, 230)
+		handle.CanCollide = false
+		handle.CanQuery = false
+		handle.CanTouch = false
+		handle.Parent = tool
+		local fruitLabel = Instance.new("BillboardGui")
+		fruitLabel.Size = UDim2.new(0, 6, 0, 1.5)
+		fruitLabel.StudsOffset = Vector3.new(0, 1.5, 0)
+		fruitLabel.AlwaysOnTop = true
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = fruitName
+		label.TextColor3 = THEME.accent
+		label.TextStrokeTransparency = 0
+		label.TextSize = 14
+		label.Font = Enum.Font.GothamBold
+		label.Parent = fruitLabel
+		fruitLabel.Parent = handle
+		tool.Parent = backpack
+		return tool
+	end
+
+	local function giveFruitToInventory(fruitName)
+		local found
+		for _, container in ipairs({ReplicatedStorage, workspace, player.StarterGear}) do
+			local asset = container:FindFirstChild(fruitName)
+			if asset then
+				found = asset
+				break
+			end
 		end
-
-	elseif command == ";reset" then
-		if player.Character and player.Character:FindFirstChild("Humanoid") then
-			player.Character.Humanoid.Health = 0
-			setOutput("Command Executed: Reset Character", THEME.accent)
-		else
-			setOutput("No character found.", THEME.red)
+		if found then
+			local clone = found:Clone()
+			clone.Parent = backpack
+			return true
 		end
+		createFruitTool(fruitName)
+		return false
+	end
 
-	elseif command == ";roll" or command == ";spin" or command == ";gacha" then
-		doGacha()
-
-	elseif command == ";inv" or command == ";inventory" then
-		invFrame.Visible = true
-		showInventory()
-
-	elseif command == ";clearinv" then
-		inventory = {}
+	local function doGacha()
+		if localBeli < ROLL_COST then
+			setOutput("Insufficient Beli!\nCost: 100,000 | Balance: " .. tostring(localBeli), THEME.red)
+			return
+		end
+		localBeli = localBeli - ROLL_COST
+		local result = rollFruit()
+		table.insert(inventory, result.Name)
+		giveFruitToInventory(result.Name)
+		beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+		setOutput("SPIN RESULT: " .. result.Name .. "\nRarity: " .. result.Rarity .. "\nGIVEN TO YOUR INVENTORY!", THEME.accent)
 		refreshInventory()
-		setOutput("Inventory cleared.", THEME.accent)
-
-	elseif command:sub(1, 7) == ";luck " then
-		local v = tonumber(text:sub(8))
-		if v and v > 0 then
-			currentLuck = v
-			beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
-			setOutput("Luck multiplier set to " .. tostring(v) .. "x", THEME.accent)
-		else
-			setOutput("Usage: ;luck <number>", THEME.red)
-		end
-
-	elseif command:sub(1, 8) == ";addbeli" then
-		local v = tonumber(text:sub(9))
-		if v then
-			localBeli = localBeli + v
-			beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
-			setOutput("Added " .. tostring(v) .. " Beli.\nBalance: " .. tostring(localBeli), THEME.accent)
-		else
-			setOutput("Usage: ;addbeli <number>", THEME.red)
-		end
-
-	elseif command == ";beli" then
-		setOutput("Balance: " .. tostring(localBeli) .. " Beli", THEME.text)
-
-	elseif command:sub(1, 6) == ";give " then
-		local fruitName = text:sub(7)
-		if fruitName and fruitName ~= "" then
-			giveFruitToInventory(fruitName)
-			table.insert(inventory, fruitName)
-			refreshInventory()
-			setOutput("Gave " .. fruitName .. "\nto your inventory!", THEME.accent)
-		else
-			setOutput("Usage: ;give <FruitName>", THEME.red)
-		end
-
-	elseif command == ";help" then
-		setOutput(";speed <n>  |  ;reset\n;roll  |  ;inv  |  ;clearinv\n;luck <n>  |  ;addbeli <n>\n;give <fruit>  |  ;beli\n;help", THEME.text)
-
-	else
-		setOutput("Unknown Command: " .. text, THEME.red)
 	end
-end)
 
--- ============================================================
--- Section 7: Chat Hooks (!spin / !roll / !gacha)
--- ============================================================
-
-local function onChatTrigger()
-	doGacha()
-end
-
-pcall(function()
-	if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-		local channels = TextChatService:FindFirstChild("TextChannels")
-		if channels then
-			local general = channels:FindFirstChild("RBXGeneral")
-			if general then
-				general.OnSendMessage:Connect(function(message)
-					local lower = message.Text:lower()
-					if lower == "!spin" or lower == "!roll" or lower == "!gacha" then
-						onChatTrigger()
-					end
-				end)
+	local function showInventory()
+		if #inventory == 0 then
+			setOutput("Inventory is empty.\nUse ;roll to spin!", THEME.text)
+		else
+			local lines = {}
+			for i, name in ipairs(inventory) do
+				table.insert(lines, i .. ". " .. name)
 			end
+			setOutput("INVENTORY (" .. #inventory .. ")\n" .. table.concat(lines, "\n"), THEME.text)
 		end
 	end
-end)
 
-pcall(function()
-	player.Chatted:Connect(function(message)
-		local lower = message:lower()
-		if lower == "!spin" or lower == "!roll" or lower == "!gacha" then
-			onChatTrigger()
-		end
-	end)
-end)
+	cmdBox.FocusLost:Connect(function(enterPressed)
+		if not enterPressed then return end
+		local text = cmdBox.Text
+		cmdBox.Text = ""
+		local command = text:lower()
 
-setOutput("PRO Admin System Active.\nCreated by: " .. player.Name, THEME.accent)
-
--- ============================================================
--- Section 8: Studio server gacha (for Roblox Studio only)
---  Place this in ServerScriptService. NOT used by the executor
---  script. Kept as reference for building the real game.
--- ============================================================
---[[
-local Players = game:GetService("Players")
-local ServerStorage = game:GetService("ServerStorage")
-
-local fruitStorage = ServerStorage:WaitForChild("FruitStorage")
-local DEFAULT_LUCK = 1
-local LUCK_MULTIPLIER = 100
-local ROLL_COST = 100000
-
-local HIGH_TIER_POOL = {
-	{ Name = "Gravity",   Rarity = "Mythical", BaseWeight = 8 },
-	{ Name = "Mammoth",   Rarity = "Mythical", BaseWeight = 7 },
-	{ Name = "T-Rex",     Rarity = "Mythical", BaseWeight = 6 },
-	{ Name = "Dough",     Rarity = "Mythical", BaseWeight = 5 },
-	{ Name = "Shadow",    Rarity = "Mythical", BaseWeight = 5 },
-	{ Name = "Venom",     Rarity = "Mythical", BaseWeight = 4 },
-	{ Name = "Gas",       Rarity = "Mythical", BaseWeight = 4 },
-	{ Name = "Spirit",    Rarity = "Mythical", BaseWeight = 3 },
-	{ Name = "Tiger",     Rarity = "Mythical", BaseWeight = 3 },
-	{ Name = "Yeti",      Rarity = "Mythical", BaseWeight = 2 },
-	{ Name = "Kitsune",   Rarity = "Mythical", BaseWeight = 1 },
-	{ Name = "Control",   Rarity = "Mythical", BaseWeight = 1 },
-	{ Name = "Dragon",    Rarity = "Mythical", BaseWeight = 1 },
-}
-
-local function onPlayerAdded(player)
-	local leaderstats = Instance.new("Folder")
-	leaderstats.Name = "leaderstats"
-	leaderstats.Parent = player
-
-	local beli = Instance.new("IntValue")
-	beli.Name = "Beli"
-	beli.Value = 1000000
-	beli.Parent = leaderstats
-
-	local luckStat = Instance.new("NumberValue")
-	luckStat.Name = "Luck"
-	luckStat.Value = DEFAULT_LUCK * LUCK_MULTIPLIER
-	luckStat.Parent = leaderstats
-end
-
-Players.PlayerAdded:Connect(onPlayerAdded)
-
-local function rollFruit(player)
-	local leaderstats = player:FindFirstChild("leaderstats")
-	local luckStat = leaderstats and leaderstats:FindFirstChild("Luck")
-	local currentLuck = luckStat and luckStat.Value or 1
-
-	local adjustedPool = {}
-	local totalWeight = 0
-	for _, fruit in ipairs(HIGH_TIER_POOL) do
-		local weight = fruit.BaseWeight * currentLuck
-		totalWeight = totalWeight + weight
-		table.insert(adjustedPool, { Name = fruit.Name, Rarity = fruit.Rarity, Weight = weight })
-	end
-
-	local randomRoll = math.random() * totalWeight
-	local weightCounter = 0
-	for _, fruit in ipairs(adjustedPool) do
-		weightCounter = weightCounter + fruit.Weight
-		if randomRoll <= weightCounter then
-			return fruit
-		end
-	end
-	return HIGH_TIER_POOL[1]
-end
-
-local function giveFruit(player, fruitName)
-	local template = fruitStorage:FindFirstChild(fruitName)
-	if template then
-		local clone = template:Clone()
-		clone.Parent = player:FindFirstChild("Backpack")
-	else
-		warn("Missing Tool asset in ServerStorage.FruitStorage: " .. tostring(fruitName))
-	end
-end
-
-Players.PlayerAdded:Connect(function(player)
-	player.Chatted:Connect(function(message)
-		local command = message:lower()
-		if command == "!spin" or command == "!roll" or command == "!gacha" then
-			local leaderstats = player:FindFirstChild("leaderstats")
-			local beli = leaderstats and leaderstats:FindFirstChild("Beli")
-			if beli and beli.Value >= ROLL_COST then
-				beli.Value = beli.Value - ROLL_COST
-				local result = rollFruit(player)
-				giveFruit(player, result.Name)
-				print(string.format("[GACHA] %s rolled %s (%s)", player.Name, result.Name, result.Rarity))
+		if command:sub(1, 7) == ";speed " then
+			local speedVal = tonumber(text:sub(8))
+			if speedVal and player.Character and player.Character:FindFirstChild("Humanoid") then
+				player.Character.Humanoid.WalkSpeed = speedVal
+				setOutput("Command Executed:\nWalkSpeed set to " .. tostring(speedVal), THEME.accent)
 			else
-				warn("[GACHA] Insufficient funds for " .. player.Name)
+				setOutput("Invalid speed or no character.", THEME.red)
+			end
+
+		elseif command == ";reset" then
+			if player.Character and player.Character:FindFirstChild("Humanoid") then
+				player.Character.Humanoid.Health = 0
+				setOutput("Command Executed: Reset Character", THEME.accent)
+			else
+				setOutput("No character found.", THEME.red)
+			end
+
+		elseif command == ";roll" or command == ";spin" or command == ";gacha" then
+			doGacha()
+
+		elseif command == ";inv" or command == ";inventory" then
+			invFrame.Visible = true
+			showInventory()
+
+		elseif command == ";clearinv" then
+			inventory = {}
+			refreshInventory()
+			setOutput("Inventory cleared.", THEME.accent)
+
+		elseif command:sub(1, 7) == ";luck " then
+			local v = tonumber(text:sub(8))
+			if v and v > 0 then
+				currentLuck = v
+				beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+				setOutput("Luck multiplier set to " .. tostring(v) .. "x", THEME.accent)
+			else
+				setOutput("Usage: ;luck <number>", THEME.red)
+			end
+
+		elseif command:sub(1, 8) == ";addbeli" then
+			local v = tonumber(text:sub(9))
+			if v then
+				localBeli = localBeli + v
+				beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+				setOutput("Added " .. tostring(v) .. " Beli.\nBalance: " .. tostring(localBeli), THEME.accent)
+			else
+				setOutput("Usage: ;addbeli <number>", THEME.red)
+			end
+
+		elseif command == ";beli" then
+			setOutput("Balance: " .. tostring(localBeli) .. " Beli", THEME.text)
+
+		elseif command:sub(1, 6) == ";give " then
+			local fruitName = text:sub(7)
+			if fruitName and fruitName ~= "" then
+				giveFruitToInventory(fruitName)
+				table.insert(inventory, fruitName)
+				refreshInventory()
+				setOutput("Gave " .. fruitName .. "\nto your inventory!", THEME.accent)
+			else
+				setOutput("Usage: ;give <FruitName>", THEME.red)
+			end
+
+		elseif command == ";help" then
+			setOutput(";speed <n>  |  ;reset\n;roll  |  ;inv  |  ;clearinv\n;luck <n>  |  ;addbeli <n>\n;give <fruit>  |  ;beli\n;help", THEME.text)
+
+		else
+			setOutput("Unknown Command: " .. text, THEME.red)
+		end
+	end)
+
+	-- ============================================================
+	-- Section 7: Chat Hooks (!spin / !roll / !gacha)
+	-- ============================================================
+
+	local function onChatTrigger()
+		doGacha()
+	end
+
+	pcall(function()
+		if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+			local channels = TextChatService:FindFirstChild("TextChannels")
+			if channels then
+				local general = channels:FindFirstChild("RBXGeneral")
+				if general then
+					general.OnSendMessage:Connect(function(message)
+						local lower = message.Text:lower()
+						if lower == "!spin" or lower == "!roll" or lower == "!gacha" then
+							onChatTrigger()
+						end
+					end)
+				end
 			end
 		end
 	end)
+
+	pcall(function()
+		player.Chatted:Connect(function(message)
+			local lower = message:lower()
+			if lower == "!spin" or lower == "!roll" or lower == "!gacha" then
+				onChatTrigger()
+			end
+		end)
+	end)
+
+	setOutput("PRO Admin System Active.\nCreated by: " .. player.Name, THEME.accent)
+
+	-- ============================================================
+	-- Section 8: Show/hide hotkey (Right Alt)
+	-- ============================================================
+
+	pcall(function()
+		UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed then return end
+			if input.KeyCode == Enum.KeyCode.RightAlt then
+				PARENT.Enabled = not PARENT.Enabled
+			end
+		end)
+	end)
+
+	setBoot("MYTHIC FRUIT SCRIPT LOADED - admin bar is bottom-right", false)
+
+	task.delay(4, function()
+		if bootStatus and bootStatus.Parent then
+			bootStatus:Destroy()
+		end
+	end)
 end)
-]]
+
+if not buildOk then
+	print("[MythicFruit] BUILD FAILED: " .. tostring(buildErr))
+	if bootStatus then
+		bootStatus.Text = "BUILD FAILED: " .. tostring(buildErr)
+		bootStatus.TextColor3 = Color3.fromRGB(255, 100, 100)
+		bootStatus.TextWrapped = true
+		bootStatus.Size = UDim2.new(0, 520, 0, 60)
+	end
+	if outputLabel then
+		outputLabel.Text = "ERROR: " .. tostring(buildErr)
+		outputLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+	end
+end
