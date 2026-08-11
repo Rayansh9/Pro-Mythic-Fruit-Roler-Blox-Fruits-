@@ -1,6 +1,6 @@
 -- ============================================================
---  MYTHIC-ROLE-FRUIT
---  Loader GUI + Pro Admin Bar + Mythical-Only Gacha
+--  MYTHIC-ROLE-FRUIT  v2.0  (MYTHIC HUB)
+--  Modern Hub UI + Mythical-Only Gacha + Script Loader
 --  Paste this into your executor and run. (Delta ready)
 -- ============================================================
 
@@ -179,24 +179,28 @@ end
 local outputLabel
 local buildOk, buildErr = pcall(function()
 
-	setBoot("Bootstrap OK - building UI...")
+	setBoot("Bootstrap OK - building hub...")
 
 	local THEME = {
-		dark   = Color3.fromRGB(35, 15, 50),
-		darker = Color3.fromRGB(20, 10, 30),
-		light  = Color3.fromRGB(55, 25, 80),
-		accent = Color3.fromRGB(0, 255, 230),
-		purple = Color3.fromRGB(180, 100, 255),
-		text   = Color3.fromRGB(210, 180, 255),
-		white  = Color3.fromRGB(255, 255, 255),
-		red    = Color3.fromRGB(255, 100, 100),
-		black  = Color3.fromRGB(0, 0, 0),
+		dark    = Color3.fromRGB(18, 18, 22),
+		card    = Color3.fromRGB(30, 30, 36),
+		panel   = Color3.fromRGB(24, 24, 31),
+		darker  = Color3.fromRGB(14, 14, 18),
+		light   = Color3.fromRGB(55, 25, 80),
+		accent  = Color3.fromRGB(0, 255, 230),
+		purple  = Color3.fromRGB(180, 100, 255),
+		text    = Color3.fromRGB(210, 210, 220),
+		white   = Color3.fromRGB(255, 255, 255),
+		red     = Color3.fromRGB(255, 100, 100),
+		gray    = Color3.fromRGB(55, 55, 62),
+		black   = Color3.fromRGB(0, 0, 0),
 	}
 
 	local function addCorner(parent, radius)
 		local c = Instance.new("UICorner")
 		c.CornerRadius = UDim.new(0, radius or 6)
 		c.Parent = parent
+		return c
 	end
 
 	local function addStroke(parent, color, thickness)
@@ -204,6 +208,51 @@ local buildOk, buildErr = pcall(function()
 		s.Color = color or THEME.accent
 		s.Thickness = thickness or 1
 		s.Parent = parent
+		return s
+	end
+
+	local function addGradient(parent, from, to, rotation)
+		local g = Instance.new("UIGradient")
+		g.Color = ColorSequence.new(from or Color3.new(1, 1, 1), to or Color3.new(0, 0, 0))
+		g.Rotation = rotation or 45
+		g.Parent = parent
+		return g
+	end
+
+	local function popIn(frame)
+		local scale = Instance.new("UIScale")
+		scale.Scale = 0.8
+		scale.Parent = frame
+		TweenService:Create(scale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	end
+
+	local shimmerList = {}
+
+	local function startShimmer(frame, c1, c2, rotation)
+		local g = addGradient(frame, c1, c2, rotation)
+		table.insert(shimmerList, g)
+		task.spawn(function()
+			local offset = 0
+			while g and g.Parent do
+				offset = (offset + 0.003) % 1
+				g.Offset = Vector2.new(offset, 0)
+				task.wait(0.03)
+			end
+		end)
+		return g
+	end
+
+	local function styleButton(btn)
+		btn.AutoButtonColor = true
+		local scale = Instance.new("UIScale")
+		scale.Scale = 1
+		scale.Parent = btn
+		btn.MouseEnter:Connect(function()
+			TweenService:Create(scale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1.1 }):Play()
+		end)
+		btn.MouseLeave:Connect(function()
+			TweenService:Create(scale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		end)
 	end
 
 	-- ============================================================
@@ -228,7 +277,6 @@ local buildOk, buildErr = pcall(function()
 
 	local LUCK_MULTIPLIER = 100
 	local currentLuck = 1 * LUCK_MULTIPLIER
-	local ROLL_COST = 100000
 	local localBeli = 1000000
 	local inventory = {}
 
@@ -254,109 +302,1005 @@ local buildOk, buildErr = pcall(function()
 	setBoot("Gacha engine ready")
 
 	-- ============================================================
-	-- Section 3: Admin Bar GUI
+	-- Section 3: MYTHIC HUB - modern UI
 	-- ============================================================
 
-	local adminFrame = Instance.new("Frame")
-	adminFrame.Name = "AdminFrame"
-	adminFrame.Size = UDim2.new(0, 320, 0, 210)
-	adminFrame.Position = UDim2.new(1, -340, 1, -230)
-	adminFrame.BackgroundColor3 = THEME.dark
-	adminFrame.BorderSizePixel = 0
-	adminFrame.Active = true
-	adminFrame.Draggable = true
-	adminFrame.Parent = PARENT
-	addCorner(adminFrame, 10)
-	addStroke(adminFrame, THEME.accent, 2)
+	local function sectionHeader(parent, title)
+		local frame = Instance.new("Frame")
+		frame.Name = "Section"
+		frame.Size = UDim2.new(1, 0, 0, 22)
+		frame.BackgroundTransparency = 1
+		frame.Parent = parent
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, 0, 1, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = "// " .. title .. " \\\\"
+		lbl.TextColor3 = THEME.purple
+		lbl.TextSize = 13
+		lbl.Font = Enum.Font.GothamBold
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Parent = frame
+		local line = Instance.new("Frame")
+		line.Name = "Line"
+		line.Size = UDim2.new(1, 0, 0, 1)
+		line.Position = UDim2.new(0, 0, 1, -1)
+		line.BackgroundColor3 = THEME.purple
+		line.BackgroundTransparency = 0.55
+		line.Parent = frame
+		return frame
+	end
 
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "Title"
-	titleLabel.Size = UDim2.new(1, 0, 0, 35)
-	titleLabel.BackgroundColor3 = THEME.light
-	titleLabel.Text = "PRO ADMIN COMMAND SYSTEM"
-	titleLabel.TextColor3 = THEME.accent
-	titleLabel.TextSize = 14
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.Parent = adminFrame
-	addCorner(titleLabel, 10)
+	local function makeToggle(parent, title, defaultValue, callback)
+		local row = Instance.new("Frame")
+		row.Name = "Toggle"
+		row.Size = UDim2.new(1, 0, 0, 30)
+		row.BackgroundTransparency = 1
+		row.Parent = parent
 
-	local loaderBtn = Instance.new("TextButton")
-	loaderBtn.Name = "LoaderButton"
-	loaderBtn.Size = UDim2.new(0, 22, 0, 22)
-	loaderBtn.Position = UDim2.new(1, -28, 0, 6)
-	loaderBtn.BackgroundColor3 = THEME.dark
-	loaderBtn.Text = "LD"
-	loaderBtn.TextColor3 = THEME.accent
-	loaderBtn.TextSize = 9
-	loaderBtn.Font = Enum.Font.GothamBold
-	loaderBtn.Parent = titleLabel
-	addCorner(loaderBtn, 6)
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, -56, 1, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = title
+		lbl.TextColor3 = THEME.text
+		lbl.TextSize = 13
+		lbl.Font = Enum.Font.Gotham
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.TextWrapped = true
+		lbl.Parent = row
 
-	local invBtn = Instance.new("TextButton")
-	invBtn.Name = "InvButton"
-	invBtn.Size = UDim2.new(0, 22, 0, 22)
-	invBtn.Position = UDim2.new(1, -54, 0, 6)
-	invBtn.BackgroundColor3 = THEME.dark
-	invBtn.Text = "INV"
-	invBtn.TextColor3 = THEME.accent
-	invBtn.TextSize = 8
-	invBtn.Font = Enum.Font.GothamBold
-	invBtn.Parent = titleLabel
-	addCorner(invBtn, 6)
+		local pill = Instance.new("Frame")
+		pill.Name = "Pill"
+		pill.Size = UDim2.new(0, 44, 0, 22)
+		pill.Position = UDim2.new(1, -44, 0.5, -11)
+		pill.BackgroundColor3 = THEME.gray
+		pill.BorderSizePixel = 0
+		pill.Parent = row
+		addCorner(pill, 11)
 
-	local cmdBox = Instance.new("TextBox")
-	cmdBox.Name = "CmdInput"
-	cmdBox.Size = UDim2.new(1, -20, 0, 35)
-	cmdBox.Position = UDim2.new(0, 10, 0, 50)
-	cmdBox.BackgroundColor3 = THEME.darker
-	cmdBox.Text = ""
-	cmdBox.PlaceholderText = "Type command (e.g. ;speed 50)..."
-	cmdBox.PlaceholderColor3 = THEME.purple
-	cmdBox.TextColor3 = THEME.white
-	cmdBox.TextSize = 13
-	cmdBox.Font = Enum.Font.Gotham
-	cmdBox.Parent = adminFrame
-	addCorner(cmdBox, 6)
-	addStroke(cmdBox, THEME.purple, 1)
+		local knob = Instance.new("Frame")
+		knob.Name = "Knob"
+		knob.Size = UDim2.new(0, 16, 0, 16)
+		knob.Position = UDim2.new(0, 3, 0.5, -8)
+		knob.BackgroundColor3 = Color3.fromRGB(210, 210, 215)
+		knob.BorderSizePixel = 0
+		knob.Parent = pill
+		addCorner(knob, 8)
 
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 1, 0)
+		btn.BackgroundTransparency = 1
+		btn.Text = ""
+		btn.Parent = row
+
+		local state = defaultValue
+		local function setState(v)
+			state = v
+			pcall(function()
+				TweenService:Create(pill, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					BackgroundColor3 = state and THEME.purple or THEME.gray
+				}):Play()
+				TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+				}):Play()
+			end)
+		end
+		setState(state)
+
+		btn.MouseButton1Click:Connect(function()
+			state = not state
+			setState(state)
+			pcall(callback, state)
+		end)
+
+		return function() return state end, function(v) setState(v) end
+	end
+
+	local function makeDropdown(parent, title, options, onSelect)
+		local frame = Instance.new("Frame")
+		frame.Name = "Dropdown"
+		frame.Size = UDim2.new(1, 0, 0, 28)
+		frame.BackgroundTransparency = 1
+		frame.Parent = parent
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(0, 100, 1, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = title
+		lbl.TextColor3 = THEME.text
+		lbl.TextSize = 12
+		lbl.Font = Enum.Font.Gotham
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Parent = frame
+
+		local box = Instance.new("TextButton")
+		box.Name = "Box"
+		box.Size = UDim2.new(1, -108, 0, 24)
+		box.Position = UDim2.new(0, 104, 0, 1)
+		box.BackgroundColor3 = Color3.fromRGB(26, 26, 32)
+		box.Text = options[1] or "Select..."
+		box.TextColor3 = THEME.white
+		box.TextSize = 12
+		box.Font = Enum.Font.Gotham
+		box.TextTruncate = Enum.TextTruncate.AtEnd
+		box.Parent = frame
+		addCorner(box, 5)
+		local boxStroke = addStroke(box, THEME.gray, 1)
+
+		local list = Instance.new("ScrollingFrame")
+		list.Name = "List"
+		list.Size = UDim2.new(1, -108, 0, 0)
+		list.Position = UDim2.new(0, 104, 0, 26)
+		list.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+		list.BorderSizePixel = 0
+		list.ScrollBarThickness = 4
+		list.CanvasSize = UDim2.new(0, 0, 0, 0)
+		list.Visible = false
+		list.ZIndex = 10
+		list.Parent = frame
+		addCorner(list, 5)
+		addStroke(list, THEME.purple, 1)
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		listLayout.Padding = UDim.new(0, 2)
+		listLayout.Parent = list
+
+		local open = false
+		local current = options[1]
+		box.MouseButton1Click:Connect(function()
+			open = not open
+			if open then
+				for _, c in ipairs(list:GetChildren()) do
+					if c:IsA("TextButton") then c:Destroy() end
+				end
+				for _, opt in ipairs(options) do
+					local o = Instance.new("TextButton")
+					o.Size = UDim2.new(1, -8, 0, 20)
+					o.Position = UDim2.new(0, 4, 0, 0)
+					o.BackgroundTransparency = 1
+					o.Text = opt
+					o.TextColor3 = opt == current and THEME.accent or THEME.text
+					o.TextSize = 11
+					o.Font = Enum.Font.Gotham
+					o.TextXAlignment = Enum.TextXAlignment.Left
+					o.Parent = list
+					o.MouseButton1Click:Connect(function()
+						current = opt
+						box.Text = opt
+						open = false
+						list.Visible = false
+						pcall(onSelect, opt)
+					end)
+				end
+				list.CanvasSize = UDim2.new(0, 0, 0, #options * 22)
+				list.Size = UDim2.new(1, -108, 0, math.min(#options * 22, 110))
+				list.Visible = true
+			else
+				list.Visible = false
+			end
+		end)
+
+		return function() return current end
+	end
+
+	local function makeActionButton(parent, text, callback, from, to)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 0, 32)
+		btn.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
+		btn.Text = text
+		btn.TextColor3 = THEME.white
+		btn.TextSize = 12
+		btn.Font = Enum.Font.GothamBold
+		btn.Parent = parent
+		addCorner(btn, 6)
+		addGradient(btn, from or Color3.fromRGB(70, 40, 120), to or Color3.fromRGB(30, 15, 50), 45)
+		addStroke(btn, THEME.purple, 1)
+		styleButton(btn)
+		btn.MouseButton1Click:Connect(callback)
+		return btn
+	end
+
+	-- ============ MAIN HUB FRAME ============
+
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "AdminFrame"
+	mainFrame.Size = UDim2.new(0, 560, 0, 420)
+	mainFrame.Position = UDim2.new(0.5, -280, 0.5, -210)
+	mainFrame.BackgroundColor3 = THEME.dark
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Active = true
+	mainFrame.Draggable = true
+	mainFrame.Parent = PARENT
+	addCorner(mainFrame, 10)
+	addStroke(mainFrame, THEME.purple, 2)
+	popIn(mainFrame)
+	startShimmer(mainFrame, Color3.fromRGB(40, 22, 55), Color3.fromRGB(14, 14, 18), 30)
+
+	-- ============ TOP BAR HEADER ============
+
+	local topBar = Instance.new("Frame")
+	topBar.Name = "TopBar"
+	topBar.Size = UDim2.new(1, 0, 0, 44)
+	topBar.BackgroundColor3 = THEME.panel
+	topBar.BorderSizePixel = 0
+	topBar.Parent = mainFrame
+	addCorner(topBar, 10)
+	addGradient(topBar, Color3.fromRGB(30, 24, 40), Color3.fromRGB(18, 18, 22), 90)
+
+	local hubTitle = Instance.new("TextLabel")
+	hubTitle.Size = UDim2.new(0, 180, 0, 44)
+	hubTitle.Position = UDim2.new(0, 12, 0, 0)
+	hubTitle.BackgroundTransparency = 1
+	hubTitle.Text = "MYTHIC HUB"
+	hubTitle.TextColor3 = THEME.purple
+	hubTitle.TextSize = 17
+	hubTitle.Font = Enum.Font.GothamBold
+	hubTitle.TextXAlignment = Enum.TextXAlignment.Left
+	hubTitle.Parent = topBar
+
+	local profileCircle = Instance.new("Frame")
+	profileCircle.Name = "Profile"
+	profileCircle.Size = UDim2.new(0, 30, 0, 30)
+	profileCircle.Position = UDim2.new(0, 180, 0.5, -15)
+	profileCircle.BackgroundColor3 = THEME.purple
+	profileCircle.BorderSizePixel = 0
+	profileCircle.Parent = topBar
+	addCorner(profileCircle, 15)
+	local profileLetter = Instance.new("TextLabel")
+	profileLetter.Size = UDim2.new(1, 0, 1, 0)
+	profileLetter.BackgroundTransparency = 1
+	profileLetter.Text = (player.Name:sub(1, 1) or "?"):upper()
+	profileLetter.TextColor3 = THEME.white
+	profileLetter.TextSize = 14
+	profileLetter.Font = Enum.Font.GothamBold
+	profileLetter.Parent = profileCircle
+
+	local profileName = Instance.new("TextLabel")
+	profileName.Size = UDim2.new(0, 160, 0, 18)
+	profileName.Position = UDim2.new(0, 216, 0, 6)
+	profileName.BackgroundTransparency = 1
+	profileName.Text = player.Name
+	profileName.TextColor3 = THEME.text
+	profileName.TextSize = 12
+	profileName.Font = Enum.Font.Gotham
+	profileName.TextXAlignment = Enum.TextXAlignment.Left
+	profileName.TextTruncate = Enum.TextTruncate.AtEnd
+	profileName.Parent = topBar
+
+	local headerPing = Instance.new("TextLabel")
+	headerPing.Size = UDim2.new(0, 90, 0, 14)
+	headerPing.Position = UDim2.new(0, 216, 0, 24)
+	headerPing.BackgroundTransparency = 1
+	headerPing.Text = "PING: --"
+	headerPing.TextColor3 = THEME.accent
+	headerPing.TextSize = 10
+	headerPing.Font = Enum.Font.GothamBold
+	headerPing.TextXAlignment = Enum.TextXAlignment.Left
+	headerPing.Parent = topBar
+
+	local headerFps = Instance.new("TextLabel")
+	headerFps.Size = UDim2.new(0, 60, 0, 14)
+	headerFps.Position = UDim2.new(0, 306, 0, 24)
+	headerFps.BackgroundTransparency = 1
+	headerFps.Text = "FPS: --"
+	headerFps.TextColor3 = THEME.accent
+	headerFps.TextSize = 10
+	headerFps.Font = Enum.Font.GothamBold
+	headerFps.TextXAlignment = Enum.TextXAlignment.Left
+	headerFps.Parent = topBar
+
+	local headerBeli = Instance.new("TextLabel")
+	headerBeli.Size = UDim2.new(0, 150, 0, 14)
+	headerBeli.Position = UDim2.new(0, 216, 0, 0)
+	headerBeli.BackgroundTransparency = 1
+	headerBeli.Text = "BELI: 1,000,000"
+	headerBeli.TextColor3 = Color3.fromRGB(255, 210, 90)
+	headerBeli.TextSize = 10
+	headerBeli.Font = Enum.Font.GothamBold
+	headerBeli.TextXAlignment = Enum.TextXAlignment.Left
+	headerBeli.Parent = topBar
+
+	local function headerTopBtn(name, text, color)
+		local b = Instance.new("TextButton")
+		b.Name = name
+		b.Size = UDim2.new(0, 24, 0, 24)
+		b.Position = UDim2.new(1, -52, 0.5, -12)
+		b.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+		b.Text = text
+		b.TextColor3 = color
+		b.TextSize = 14
+		b.Font = Enum.Font.GothamBold
+		b.Parent = topBar
+		addCorner(b, 6)
+		styleButton(b)
+		return b
+	end
+
+	local minimizeBtn = headerTopBtn("Minimize", "\\/", THEME.text)
+	minimizeBtn.Position = UDim2.new(1, -80, 0.5, -12)
+	local closeBtn = headerTopBtn("Close", "X", THEME.red)
+	closeBtn.Position = UDim2.new(1, -52, 0.5, -12)
+
+	local reopenPill = Instance.new("TextButton")
+	reopenPill.Name = "ReopenPill"
+	reopenPill.Size = UDim2.new(0, 190, 0, 34)
+	reopenPill.Position = UDim2.new(1, -210, 1, -48)
+	reopenPill.BackgroundColor3 = THEME.panel
+	reopenPill.Text = "MYTHIC HUB  -  CLICK TO OPEN"
+	reopenPill.TextColor3 = THEME.purple
+	reopenPill.TextSize = 11
+	reopenPill.Font = Enum.Font.GothamBold
+	reopenPill.Visible = false
+	reopenPill.Parent = PARENT
+	addCorner(reopenPill, 8)
+	addStroke(reopenPill, THEME.purple, 1)
+	styleButton(reopenPill)
+
+	local function hideHub()
+		mainFrame.Visible = false
+		reopenPill.Visible = true
+	end
+
+	minimizeBtn.MouseButton1Click:Connect(hideHub)
+	closeBtn.MouseButton1Click:Connect(hideHub)
+	reopenPill.MouseButton1Click:Connect(function()
+		reopenPill.Visible = false
+		mainFrame.Visible = true
+	end)
+
+	-- ============ SIDEBAR NAVIGATION ============
+
+	local sidebar = Instance.new("Frame")
+	sidebar.Name = "Sidebar"
+	sidebar.Size = UDim2.new(0, 150, 1, -44)
+	sidebar.Position = UDim2.new(0, 0, 0, 44)
+	sidebar.BackgroundColor3 = THEME.panel
+	sidebar.BorderSizePixel = 0
+	sidebar.Parent = mainFrame
+
+	local tabLayout = Instance.new("UIListLayout")
+	tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tabLayout.Padding = UDim.new(0, 4)
+	tabLayout.Parent = sidebar
+
+	local sidebarHint = Instance.new("TextLabel")
+	sidebarHint.Size = UDim2.new(1, -16, 0, 26)
+	sidebarHint.Position = UDim2.new(0, 8, 1, -30)
+	sidebarHint.BackgroundTransparency = 1
+	sidebarHint.Text = "RightAlt = show/hide"
+	sidebarHint.TextColor3 = THEME.gray
+	sidebarHint.TextSize = 9
+	sidebarHint.Font = Enum.Font.Gotham
+	sidebarHint.Parent = sidebar
+
+	local tabs = {
+		{ Name = "Info",     Icon = "I" },
+		{ Name = "Farming",  Icon = "F" },
+		{ Name = "Stats",    Icon = "S" },
+		{ Name = "SeaEvents", Icon = "W" },
+		{ Name = "Items",    Icon = "T" },
+		{ Name = "Settings", Icon = "O" },
+	}
+
+	local tabButtons = {}
+	local function makeTabButton(info)
+		local btn = Instance.new("TextButton")
+		btn.Name = "Tab_" .. info.Name
+		btn.Size = UDim2.new(1, -8, 0, 34)
+		btn.Position = UDim2.new(0, 4, 0, 0)
+		btn.BackgroundColor3 = Color3.fromRGB(40, 40, 46)
+		btn.Text = ""
+		btn.Parent = sidebar
+		addCorner(btn, 6)
+
+		local icon = Instance.new("Frame")
+		icon.Name = "Icon"
+		icon.Size = UDim2.new(0, 24, 0, 24)
+		icon.Position = UDim2.new(0, 5, 0.5, -12)
+		icon.BackgroundColor3 = THEME.gray
+		icon.BorderSizePixel = 0
+		icon.Parent = btn
+		addCorner(icon, 7)
+		local iconLbl = Instance.new("TextLabel")
+		iconLbl.Size = UDim2.new(1, 0, 1, 0)
+		iconLbl.BackgroundTransparency = 1
+		iconLbl.Text = info.Icon
+		iconLbl.TextColor3 = THEME.white
+		iconLbl.TextSize = 12
+		iconLbl.Font = Enum.Font.GothamBold
+		iconLbl.Parent = icon
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, -38, 1, 0)
+		label.Position = UDim2.new(0, 34, 0, 0)
+		label.BackgroundTransparency = 1
+		label.Text = info.Name == "SeaEvents" and "Sea Events" or info.Name
+		label.TextColor3 = THEME.text
+		label.TextSize = 12
+		label.Font = Enum.Font.GothamBold
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = btn
+
+		local activeBar = Instance.new("Frame")
+		activeBar.Name = "ActiveBar"
+		activeBar.Size = UDim2.new(0, 3, 1, -8)
+		activeBar.Position = UDim2.new(0, 0, 0.5, -4)
+		activeBar.BackgroundColor3 = THEME.accent
+		activeBar.Visible = false
+		activeBar.Parent = btn
+
+		return btn
+	end
+
+	local activeTab = "Info"
+	local pages = {}
+
+	local function goTab(name)
+		activeTab = name
+		for _, tabInfo in ipairs(tabs) do
+			local btn = tabButtons[tabInfo.Name]
+			local isActive = tabInfo.Name == name
+			if isActive then
+				btn.BackgroundColor3 = Color3.fromRGB(80, 45, 120)
+				local hasGrad = false
+				for _, c in ipairs(btn:GetChildren()) do
+					if c:IsA("UIGradient") then hasGrad = true end
+				end
+				if not hasGrad then
+					addGradient(btn, Color3.fromRGB(110, 50, 170), Color3.fromRGB(60, 25, 90), 45)
+				end
+				btn:FindFirstChild("ActiveBar").Visible = true
+				btn:FindFirstChild("Icon").BackgroundColor3 = THEME.purple
+				btn:FindFirstChild("Icon"):FindFirstChild("TextLabel").TextColor3 = THEME.white
+			else
+				btn.BackgroundColor3 = Color3.fromRGB(40, 40, 46)
+				for _, c in ipairs(btn:GetChildren()) do
+					if c:IsA("UIGradient") then c:Destroy() end
+				end
+				btn:FindFirstChild("ActiveBar").Visible = false
+				btn:FindFirstChild("Icon").BackgroundColor3 = THEME.gray
+				btn:FindFirstChild("Icon"):FindFirstChild("TextLabel").TextColor3 = THEME.white
+			end
+		end
+		for pname, page in pairs(pages) do
+			page.Visible = (pname == name)
+		end
+		pcall(function()
+			local page = pages[name]
+			if page and page.AbsoluteSize.Y > 0 then
+				contentScroller.CanvasSize = UDim2.new(0, 0, 0, page.AbsoluteSize.Y + 20)
+			end
+		end)
+	end
+
+	for _, tabInfo in ipairs(tabs) do
+		local btn = makeTabButton(tabInfo)
+		btn.Parent = sidebar
+		tabButtons[tabInfo.Name] = btn
+		btn.MouseButton1Click:Connect(function()
+			goTab(tabInfo.Name)
+		end)
+	end
+
+	-- ============ CONTENT PANEL ============
+
+	local contentScroller = Instance.new("ScrollingFrame")
+	contentScroller.Name = "Content"
+	contentScroller.Size = UDim2.new(1, -160, 1, -52)
+	contentScroller.Position = UDim2.new(0, 154, 0, 48)
+	contentScroller.BackgroundColor3 = THEME.darker
+	contentScroller.BorderSizePixel = 0
+	contentScroller.ScrollBarThickness = 5
+	contentScroller.ScrollBarImageColor3 = THEME.purple
+	contentScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
+	contentScroller.Parent = mainFrame
+	addCorner(contentScroller, 8)
+
+	local pageHolder = Instance.new("Frame")
+	pageHolder.Name = "PageHolder"
+	pageHolder.Size = UDim2.new(1, 0, 1, 0)
+	pageHolder.BackgroundTransparency = 1
+	pageHolder.BorderSizePixel = 0
+	pageHolder.Parent = contentScroller
+
+	local function newPage(name)
+		local page = Instance.new("Frame")
+		page.Name = name
+		page.Size = UDim2.new(1, -16, 0, 0)
+		page.Position = UDim2.new(0, 8, 0, 6)
+		page.BackgroundTransparency = 1
+		page.BorderSizePixel = 0
+		page.Visible = false
+		page.Parent = pageHolder
+		local layout = Instance.new("UIListLayout")
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding = UDim.new(0, 6)
+		layout.Parent = page
+		pages[name] = page
+		task.delay(0.06, function()
+			pcall(function()
+				local h = layout.AbsoluteContentSize.Y
+				page.Size = UDim2.new(1, -16, 0, h + 12)
+				if activeTab == name then
+					contentScroller.CanvasSize = UDim2.new(0, 0, 0, h + 24)
+				end
+			end)
+		end)
+		return page, layout
+	end
+
+	local function makeCard(parent, height)
+		local card = Instance.new("Frame")
+		card.Name = "Card"
+		card.Size = UDim2.new(1, 0, 0, height or 80)
+		card.BackgroundColor3 = THEME.card
+		card.BorderSizePixel = 0
+		card.Parent = parent
+		addCorner(card, 8)
+		addStroke(card, Color3.fromRGB(45, 45, 54), 1)
+		return card
+	end
+
+	-- ============ INFO PAGE ============
+
+	local infoPage = newPage("Info")
+
+	sectionHeader(infoPage, "MYTHIC HUB")
+
+	local aboutCard = makeCard(infoPage, 108)
+	local aboutTitle = Instance.new("TextLabel")
+	aboutTitle.Size = UDim2.new(1, -20, 0, 20)
+	aboutTitle.Position = UDim2.new(0, 10, 0, 8)
+	aboutTitle.BackgroundTransparency = 1
+	aboutTitle.Text = "MYTHIC ROLE FRUIT"
+	aboutTitle.TextColor3 = THEME.purple
+	aboutTitle.TextSize = 14
+	aboutTitle.Font = Enum.Font.GothamBold
+	aboutTitle.TextXAlignment = Enum.TextXAlignment.Left
+	aboutTitle.Parent = aboutCard
+	local aboutDesc = Instance.new("TextLabel")
+	aboutDesc.Size = UDim2.new(1, -20, 0, 76)
+	aboutDesc.Position = UDim2.new(0, 10, 0, 28)
+	aboutDesc.BackgroundTransparency = 1
+	aboutDesc.Text = "My mythical-only gacha hub\nVersion 2.0  |  Creator: " .. player.Name ..
+		"\nFEATURES: FREE unlimited rolls | Mythical pool | In-game script loader | Ping/FPS monitor\nHotkey: RightAlt toggles the hub on/off."
+	aboutDesc.TextColor3 = THEME.text
+	aboutDesc.TextSize = 11
+	aboutDesc.Font = Enum.Font.Gotham
+	aboutDesc.TextWrapped = true
+	aboutDesc.TextXAlignment = Enum.TextXAlignment.Left
+	aboutDesc.TextYAlignment = Enum.TextYAlignment.Top
+	aboutDesc.Parent = aboutCard
+
+	sectionHeader(infoPage, "QUICK ROLL")
+
+	local rollBtn = makeActionButton(infoPage, "SPIN  -  FREE MYTHICAL ROLL", nil,
+		Color3.fromRGB(140, 50, 230), Color3.fromRGB(0, 255, 230))
+	rollBtn.Size = UDim2.new(1, 0, 0, 38)
+
+	local outputCard = makeCard(infoPage, 92)
 	outputLabel = Instance.new("TextLabel")
 	outputLabel.Name = "Output"
-	outputLabel.Size = UDim2.new(1, -20, 0, 80)
-	outputLabel.Position = UDim2.new(0, 10, 0, 95)
-	outputLabel.BackgroundColor3 = THEME.darker
-	outputLabel.Text = "PRO Admin System Active.\nCreated by: " .. player.Name
+	outputLabel.Size = UDim2.new(1, -20, 1, -16)
+	outputLabel.Position = UDim2.new(0, 10, 0, 8)
+	outputLabel.BackgroundTransparency = 1
+	outputLabel.Text = "MYTHIC HUB active.\nUse the SPIN button or type ;roll in the command box."
 	outputLabel.TextColor3 = THEME.text
 	outputLabel.TextSize = 12
 	outputLabel.Font = Enum.Font.Gotham
 	outputLabel.TextWrapped = true
 	outputLabel.TextXAlignment = Enum.TextXAlignment.Left
 	outputLabel.TextYAlignment = Enum.TextYAlignment.Top
-	outputLabel.Parent = adminFrame
-	addCorner(outputLabel, 6)
+	outputLabel.Parent = outputCard
 	addStroke(outputLabel, THEME.purple, 1)
 
-	local beliLabel = Instance.new("TextLabel")
-	beliLabel.Name = "BeliLabel"
-	beliLabel.Size = UDim2.new(1, -20, 0, 20)
-	beliLabel.Position = UDim2.new(0, 10, 0, 185)
-	beliLabel.BackgroundColor3 = THEME.light
-	beliLabel.Text = "Beli: 1,000,000  |  Luck: 100x"
-	beliLabel.TextColor3 = THEME.accent
-	beliLabel.TextSize = 11
-	beliLabel.Font = Enum.Font.Gotham
-	beliLabel.Parent = adminFrame
-	addCorner(beliLabel, 6)
+	sectionHeader(infoPage, "COMMANDS")
 
-	local function setOutput(text, color)
-		outputLabel.Text = text
-		outputLabel.TextColor3 = color or THEME.text
+	local cmdRow = Instance.new("Frame")
+	cmdRow.Name = "CmdRow"
+	cmdRow.Size = UDim2.new(1, 0, 0, 34)
+	cmdRow.BackgroundTransparency = 1
+	cmdRow.Parent = infoPage
+
+	local cmdBox = Instance.new("TextBox")
+	cmdBox.Name = "CmdInput"
+	cmdBox.Size = UDim2.new(1, -66, 0, 32)
+	cmdBox.BackgroundColor3 = Color3.fromRGB(26, 26, 32)
+	cmdBox.Text = ""
+	cmdBox.PlaceholderText = "Type command (;roll, ;speed 50)..."
+	cmdBox.PlaceholderColor3 = THEME.gray
+	cmdBox.TextColor3 = THEME.white
+	cmdBox.TextSize = 12
+	cmdBox.Font = Enum.Font.Gotham
+	cmdBox.Parent = cmdRow
+	addCorner(cmdBox, 6)
+	addStroke(cmdBox, THEME.gray, 1)
+	cmdBox.Focused:Connect(function()
+		TweenService:Create(cmdBox.UIStroke, TweenInfo.new(0.15), { Color = THEME.accent, Thickness = 2 }):Play()
+	end)
+	cmdBox.FocusLost:Connect(function()
+		TweenService:Create(cmdBox.UIStroke, TweenInfo.new(0.15), { Color = THEME.gray, Thickness = 1 }):Play()
+	end)
+
+	local runBtn = Instance.new("TextButton")
+	runBtn.Size = UDim2.new(0, 58, 0, 32)
+	runBtn.Position = UDim2.new(1, -58, 0, 0)
+	runBtn.BackgroundColor3 = THEME.purple
+	runBtn.Text = "RUN"
+	runBtn.TextColor3 = THEME.white
+	runBtn.TextSize = 11
+	runBtn.Font = Enum.Font.GothamBold
+	runBtn.Parent = cmdRow
+	addCorner(runBtn, 6)
+	styleButton(runBtn)
+
+	local helpHint = Instance.new("TextLabel")
+	helpHint.Size = UDim2.new(1, 0, 0, 16)
+	helpHint.BackgroundTransparency = 1
+	helpHint.Text = ";speed <n> | ;reset | ;roll | ;inv | ;clearinv | ;luck <n> | ;addbeli <n> | ;give <fruit> | ;help"
+	helpHint.TextColor3 = THEME.gray
+	helpHint.TextSize = 9
+	helpHint.Font = Enum.Font.Gotham
+	helpHint.TextXAlignment = Enum.TextXAlignment.Left
+	helpHint.Parent = infoPage
+
+	-- ============ FARMING PAGE ============
+
+	local farmPage = newPage("Farming")
+
+	sectionHeader(farmPage, "MOVEMENT")
+
+	local speedDrop = makeDropdown(farmPage, "Speed", { "16", "25", "50", "80", "120" }, function(v)
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = tonumber(v)
+			setOutput("WalkSpeed set to " .. v, THEME.accent)
+		else
+			setOutput("No character found.", THEME.red)
+		end
+	end)
+
+	local chatEnabled = true
+	local superSpeed = true
+	local function applySuperSpeed(on)
+		superSpeed = on
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = on and 80 or 16
+		end
+	end
+	local superToggle = makeToggle(farmPage, "SUPER SPEED (80)", superSpeed, applySuperSpeed)
+	applySuperSpeed(true)
+
+	makeActionButton(farmPage, "SET WALKSPEED 50", function()
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = 50
+			applySuperSpeed(false)
+			setOutput("WalkSpeed set to 50 (super speed off)", THEME.accent)
+		end
+	end)
+	makeActionButton(farmPage, "SET WALKSPEED 100", function()
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = 100
+			applySuperSpeed(false)
+			setOutput("WalkSpeed set to 100 (super speed off)", THEME.accent)
+		end
+	end)
+	makeActionButton(farmPage, "RESET CHARACTER", function()
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.Health = 0
+			setOutput("Character reset.", THEME.accent)
+		else
+			setOutput("No character found.", THEME.red)
+		end
+	end)
+	makeActionButton(farmPage, "TELEPORT TO SPAWN", function()
+		local ok = pcall(function()
+			local spawn = workspace:FindFirstChild("SpawnLocation")
+			if spawn and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+				player.Character.HumanoidRootPart.CFrame = spawn.CFrame * CFrame.new(0, 5, 0)
+				setOutput("Teleported to spawn.", THEME.accent)
+			else
+				setOutput("Spawn not found.", THEME.red)
+			end
+		end)
+		if not ok then setOutput("Teleport failed.", THEME.red) end
+	end)
+
+	-- ============ STATS PAGE ============
+
+	local statsPage = newPage("Stats")
+
+	sectionHeader(statsPage, "LIVE STATS")
+
+	local statsCard = makeCard(statsPage, 152)
+	local statValues = {}
+	local function statRow(parent, key, label)
+		local row = Instance.new("Frame")
+		row.Name = key
+		row.Size = UDim2.new(1, -16, 0, 22)
+		row.Position = UDim2.new(0, 8, 0, 0)
+		row.BackgroundTransparency = 1
+		row.Parent = parent
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(0.5, 0, 1, 0)
+		name.BackgroundTransparency = 1
+		name.Text = label
+		name.TextColor3 = THEME.text
+		name.TextSize = 12
+		name.Font = Enum.Font.Gotham
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.Parent = row
+		local value = Instance.new("TextLabel")
+		value.Size = UDim2.new(0.5, 0, 1, 0)
+		value.Position = UDim2.new(0.5, 0, 0, 0)
+		value.BackgroundTransparency = 1
+		value.Text = "—"
+		value.TextColor3 = THEME.accent
+		value.TextSize = 12
+		value.Font = Enum.Font.GothamBold
+		value.TextXAlignment = Enum.TextXAlignment.Right
+		value.Parent = row
+		statValues[key] = value
+		return row
 	end
 
-	setBoot("Admin bar built")
+	local statList = Instance.new("UIListLayout")
+	statList.SortOrder = Enum.SortOrder.LayoutOrder
+	statList.Padding = UDim.new(0, 2)
+	statList.Parent = statsCard
+	statRow(statsCard, "player", "PLAYER")
+	statRow(statsCard, "ping", "PING")
+	statRow(statsCard, "fps", "FPS")
+	statRow(statsCard, "beli", "BELI")
+	statRow(statsCard, "luck", "LUCK")
+	statRow(statsCard, "inv", "FRUITS OWNED")
+	statValues.player.Text = player.Name
 
-	-- ============================================================
-	-- Section 4: Script Loader GUI
-	-- ============================================================
+	sectionHeader(statsPage, "MODIFY")
+
+	makeActionButton(statsPage, "+100,000 BELI", function()
+		localBeli = localBeli + 100000
+		updateStats()
+		setOutput("Added 100,000 Beli.\nBalance: " .. tostring(localBeli), THEME.accent)
+	end)
+	makeActionButton(statsPage, "SET LUCK x100", function()
+		currentLuck = 100
+		updateStats()
+		setOutput("Luck set to 100x", THEME.accent)
+	end)
+	makeActionButton(statsPage, "SET LUCK x1000", function()
+		currentLuck = 1000
+		updateStats()
+		setOutput("Luck set to 1000x", THEME.accent)
+	end)
+	makeActionButton(statsPage, "CLEAR INVENTORY", function()
+		inventory = {}
+		refreshInventory()
+		setOutput("Inventory cleared.", THEME.accent)
+	end)
+
+	-- ============ SEA EVENTS PAGE ============
+
+	local seaPage = newPage("SeaEvents")
+
+	sectionHeader(seaPage, "EVENT REWARDS")
+
+	local seaHint = Instance.new("TextLabel")
+	seaHint.Size = UDim2.new(1, 0, 0, 30)
+	seaHint.BackgroundTransparency = 1
+	seaHint.Text = "Complete (simulate) a sea event to earn a FREE mythical fruit into your inventory.\nThese are cosmetic local rewards."
+	seaHint.TextColor3 = THEME.text
+	seaHint.TextSize = 11
+	seaHint.Font = Enum.Font.Gotham
+	seaHint.TextWrapped = true
+	seaHint.TextXAlignment = Enum.TextXAlignment.Left
+	seaHint.Parent = seaPage
+
+	local function eventReward(eventName, fruitName)
+		local name = fruitName or HIGH_TIER_POOL[math.random(#HIGH_TIER_POOL)].Name
+		giveFruitToInventory(name)
+		if not table.find(inventory, name) then table.insert(inventory, name) end
+		refreshInventory()
+		updateStats()
+		spinFlash()
+		setOutput(eventName .. "\nReward: " .. name .. " (MYTHICAL) - ADDED TO INVENTORY!", THEME.accent)
+	end
+
+	makeActionButton(seaPage, "GHOST SHIP  -  survive the raid", function()
+		eventReward("GHOST SHIP SURVIVED", "Dough")
+	end, Color3.fromRGB(90, 40, 130), Color3.fromRGB(30, 15, 50))
+	makeActionButton(seaPage, "DARKBEARD RAID  -  defeat the boss", function()
+		eventReward("DARKBEARD DEFEATED", "Dragon")
+	end, Color3.fromRGB(90, 40, 130), Color3.fromRGB(30, 15, 50))
+	makeActionButton(seaPage, "TIDE WARNING  -  hold the waves", function()
+		eventReward("TIDE HOLD COMPLETE")
+	end, Color3.fromRGB(90, 40, 130), Color3.fromRGB(30, 15, 50))
+	makeActionButton(seaPage, "MYTHIC SURGE  -  random mythical", function()
+		eventReward("MYTHIC SURGE")
+	end, Color3.fromRGB(140, 50, 230), Color3.fromRGB(0, 255, 230))
+
+	-- ============ ITEMS PAGE ============
+
+	local itemsPage = newPage("Items")
+
+	sectionHeader(itemsPage, "INVENTORY")
+
+	local invTitleLabel = Instance.new("TextLabel")
+	invTitleLabel.Size = UDim2.new(1, 0, 0, 18)
+	invTitleLabel.BackgroundTransparency = 1
+	invTitleLabel.Text = "INVENTORY (0)  -  FREE ROLLS"
+	invTitleLabel.TextColor3 = THEME.accent
+	invTitleLabel.TextSize = 11
+	invTitleLabel.Font = Enum.Font.GothamBold
+	invTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	invTitleLabel.Parent = itemsPage
+
+	local invList = Instance.new("ScrollingFrame")
+	invList.Name = "List"
+	invList.Size = UDim2.new(1, 0, 0, 150)
+	invList.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+	invList.BorderSizePixel = 0
+	invList.ScrollBarThickness = 4
+	invList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	invList.Parent = itemsPage
+	addCorner(invList, 6)
+	addStroke(invList, THEME.gray, 1)
+	local invLayout = Instance.new("UIListLayout")
+	invLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	invLayout.Padding = UDim.new(0, 2)
+	invLayout.Parent = invList
+
+	sectionHeader(itemsPage, "GIVE FRUIT")
+
+	local selectedFruit = HIGH_TIER_POOL[1].Name
+	local fruitDrop = makeDropdown(itemsPage, "Fruit", (function()
+		local names = {}
+		for _, f in ipairs(HIGH_TIER_POOL) do table.insert(names, f.Name) end
+		return names
+	end)(), function(v)
+		selectedFruit = v
+		giveBtn.Text = "GIVE " .. selectedFruit
+	end)
+
+	local giveRow = Instance.new("Frame")
+	giveRow.Name = "GiveRow"
+	giveRow.Size = UDim2.new(1, 0, 0, 34)
+	giveRow.BackgroundTransparency = 1
+	giveRow.Parent = itemsPage
+
+	local giveBtn = Instance.new("TextButton")
+	giveBtn.Size = UDim2.new(1, -66, 0, 32)
+	giveBtn.BackgroundColor3 = THEME.purple
+	giveBtn.Text = "GIVE " .. selectedFruit
+	giveBtn.TextColor3 = THEME.white
+	giveBtn.TextSize = 12
+	giveBtn.Font = Enum.Font.GothamBold
+	giveBtn.TextTruncate = Enum.TextTruncate.AtEnd
+	giveBtn.Parent = giveRow
+	addCorner(giveBtn, 6)
+	styleButton(giveBtn)
+	giveBtn.MouseButton1Click:Connect(function()
+		giveFruitToInventory(selectedFruit)
+		if not table.find(inventory, selectedFruit) then table.insert(inventory, selectedFruit) end
+		refreshInventory()
+		updateStats()
+		spinFlash()
+		setOutput("Gave " .. selectedFruit .. "\nto your inventory (FREE)!", THEME.accent)
+	end)
+
+	local clearInvBtn = Instance.new("TextButton")
+	clearInvBtn.Size = UDim2.new(0, 58, 0, 32)
+	clearInvBtn.Position = UDim2.new(1, -58, 0, 0)
+	clearInvBtn.BackgroundColor3 = Color3.fromRGB(60, 30, 40)
+	clearInvBtn.Text = "CLEAR"
+	clearInvBtn.TextColor3 = THEME.red
+	clearInvBtn.TextSize = 11
+	clearInvBtn.Font = Enum.Font.GothamBold
+	clearInvBtn.Parent = giveRow
+	addCorner(clearInvBtn, 6)
+	styleButton(clearInvBtn)
+	clearInvBtn.MouseButton1Click:Connect(function()
+		inventory = {}
+		refreshInventory()
+		setOutput("Inventory cleared.", THEME.accent)
+	end)
+
+	-- ============ SETTINGS PAGE ============
+
+	local settingsPage = newPage("Settings")
+
+	sectionHeader(settingsPage, "PREFERENCES")
+
+	local chatToggle = makeToggle(settingsPage, "CHAT COMMANDS (!spin / !roll)", chatEnabled, function(v)
+		chatEnabled = v
+		setOutput("Chat commands " .. (v and "ENABLED" or "DISABLED"), THEME.accent)
+	end)
+
+	local shimmerToggle = makeToggle(settingsPage, "UI SHIMMER EFFECT", true, function(v)
+		for _, g in ipairs(shimmerList) do
+			pcall(function() g.Visible = v end)
+		end
+	end)
+
+	local hotkeyEnabled = true
+	local hotkeyToggle = makeToggle(settingsPage, "RIGHTALT SHOW/HIDE HOTKEY", true, function(v)
+		hotkeyEnabled = v
+	end)
+
+	sectionHeader(settingsPage, "SCRIPT LOADER")
+
+	local urlBox = Instance.new("TextBox")
+	urlBox.Name = "UrlInput"
+	urlBox.Size = UDim2.new(1, 0, 0, 32)
+	urlBox.BackgroundColor3 = Color3.fromRGB(26, 26, 32)
+	urlBox.Text = ""
+	urlBox.PlaceholderText = "Paste script URL here..."
+	urlBox.PlaceholderColor3 = THEME.gray
+	urlBox.TextColor3 = THEME.white
+	urlBox.TextSize = 12
+	urlBox.Font = Enum.Font.Gotham
+	urlBox.Parent = settingsPage
+	addCorner(urlBox, 6)
+	addStroke(urlBox, THEME.gray, 1)
+	urlBox.Focused:Connect(function()
+		TweenService:Create(urlBox.UIStroke, TweenInfo.new(0.15), { Color = THEME.accent, Thickness = 2 }):Play()
+	end)
+	urlBox.FocusLost:Connect(function()
+		TweenService:Create(urlBox.UIStroke, TweenInfo.new(0.15), { Color = THEME.gray, Thickness = 1 }):Play()
+	end)
+
+	local executeBtn = Instance.new("TextButton")
+	executeBtn.Size = UDim2.new(1, 0, 0, 36)
+	executeBtn.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
+	executeBtn.Text = "EXECUTE"
+	executeBtn.TextColor3 = THEME.white
+	executeBtn.TextSize = 13
+	executeBtn.Font = Enum.Font.GothamBold
+	executeBtn.Parent = settingsPage
+	addCorner(executeBtn, 8)
+	addGradient(executeBtn, Color3.fromRGB(140, 50, 230), Color3.fromRGB(0, 255, 230), 90)
+	styleButton(executeBtn)
+
+	local loaderStatus = Instance.new("TextLabel")
+	loaderStatus.Name = "Status"
+	loaderStatus.Size = UDim2.new(1, 0, 0, 34)
+	loaderStatus.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+	loaderStatus.Text = "Status: Idle"
+	loaderStatus.TextColor3 = THEME.text
+	loaderStatus.TextSize = 11
+	loaderStatus.Font = Enum.Font.Gotham
+	loaderStatus.TextWrapped = true
+	loaderStatus.TextXAlignment = Enum.TextXAlignment.Left
+	loaderStatus.Parent = settingsPage
+	addCorner(loaderStatus, 6)
+
+	local historyList = Instance.new("ScrollingFrame")
+	historyList.Name = "HistoryList"
+	historyList.Size = UDim2.new(1, 0, 0, 70)
+	historyList.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+	historyList.BorderSizePixel = 0
+	historyList.ScrollBarThickness = 4
+	historyList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	historyList.Parent = settingsPage
+	addCorner(historyList, 6)
+	addStroke(historyList, THEME.gray, 1)
+	local historyLayout = Instance.new("UIListLayout")
+	historyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	historyLayout.Padding = UDim.new(0, 2)
+	historyLayout.Parent = historyList
+
+	sectionHeader(settingsPage, "ABOUT")
+
+	local aboutNote = Instance.new("TextLabel")
+	aboutNote.Size = UDim2.new(1, 0, 0, 34)
+	aboutNote.BackgroundTransparency = 1
+	aboutNote.Text = "MYTHIC-ROLE-FRUIT v2.0\nPress RightAlt to show/hide the whole hub."
+	aboutNote.TextColor3 = THEME.gray
+	aboutNote.TextSize = 10
+	aboutNote.Font = Enum.Font.Gotham
+	aboutNote.TextWrapped = true
+	aboutNote.TextXAlignment = Enum.TextXAlignment.Left
+	aboutNote.Parent = settingsPage
+
+	-- ============ HUB LOGIC ============
 
 	local HISTORY_FOLDER = "MythicRole"
 	local HISTORY_FILE = HISTORY_FOLDER .. "/history.json"
@@ -378,110 +1322,6 @@ local buildOk, buildErr = pcall(function()
 		end
 	end
 
-	local loaderFrame = Instance.new("Frame")
-	loaderFrame.Name = "LoaderFrame"
-	loaderFrame.Size = UDim2.new(0, 320, 0, 230)
-	loaderFrame.Position = UDim2.new(1, -340, 1, -480)
-	loaderFrame.BackgroundColor3 = THEME.dark
-	loaderFrame.BorderSizePixel = 0
-	loaderFrame.Active = true
-	loaderFrame.Draggable = true
-	loaderFrame.Visible = false
-	loaderFrame.Parent = PARENT
-	addCorner(loaderFrame, 10)
-	addStroke(loaderFrame, THEME.purple, 2)
-
-	local loaderTitle = Instance.new("TextLabel")
-	loaderTitle.Name = "Title"
-	loaderTitle.Size = UDim2.new(1, 0, 0, 35)
-	loaderTitle.BackgroundColor3 = THEME.light
-	loaderTitle.Text = "IN-GAME SCRIPT LOADER"
-	loaderTitle.TextColor3 = THEME.accent
-	loaderTitle.TextSize = 14
-	loaderTitle.Font = Enum.Font.GothamBold
-	loaderTitle.Parent = loaderFrame
-	addCorner(loaderTitle, 10)
-
-	local loaderClose = Instance.new("TextButton")
-	loaderClose.Name = "CloseButton"
-	loaderClose.Size = UDim2.new(0, 22, 0, 22)
-	loaderClose.Position = UDim2.new(1, -28, 0, 6)
-	loaderClose.BackgroundColor3 = THEME.dark
-	loaderClose.Text = "X"
-	loaderClose.TextColor3 = THEME.red
-	loaderClose.TextSize = 12
-	loaderClose.Font = Enum.Font.GothamBold
-	loaderClose.Parent = loaderTitle
-	addCorner(loaderClose, 6)
-
-	local urlBox = Instance.new("TextBox")
-	urlBox.Name = "UrlInput"
-	urlBox.Size = UDim2.new(1, -20, 0, 32)
-	urlBox.Position = UDim2.new(0, 10, 0, 45)
-	urlBox.BackgroundColor3 = THEME.darker
-	urlBox.Text = ""
-	urlBox.PlaceholderText = "Paste script URL here..."
-	urlBox.PlaceholderColor3 = THEME.purple
-	urlBox.TextColor3 = THEME.white
-	urlBox.TextSize = 12
-	urlBox.Font = Enum.Font.Gotham
-	urlBox.Parent = loaderFrame
-	addCorner(urlBox, 6)
-	addStroke(urlBox, THEME.purple, 1)
-
-	local executeBtn = Instance.new("TextButton")
-	executeBtn.Name = "ExecuteButton"
-	executeBtn.Size = UDim2.new(1, -20, 0, 36)
-	executeBtn.Position = UDim2.new(0, 10, 0, 85)
-	executeBtn.BackgroundColor3 = Color3.fromRGB(140, 50, 230)
-	executeBtn.Text = "EXECUTE"
-	executeBtn.TextColor3 = THEME.white
-	executeBtn.TextSize = 13
-	executeBtn.Font = Enum.Font.GothamBold
-	executeBtn.Parent = loaderFrame
-	addCorner(executeBtn, 8)
-
-	local loaderStatus = Instance.new("TextLabel")
-	loaderStatus.Name = "Status"
-	loaderStatus.Size = UDim2.new(1, -20, 0, 40)
-	loaderStatus.Position = UDim2.new(0, 10, 0, 130)
-	loaderStatus.BackgroundColor3 = THEME.darker
-	loaderStatus.Text = "Status: Idle"
-	loaderStatus.TextColor3 = THEME.text
-	loaderStatus.TextSize = 12
-	loaderStatus.Font = Enum.Font.Gotham
-	loaderStatus.TextWrapped = true
-	loaderStatus.TextXAlignment = Enum.TextXAlignment.Left
-	loaderStatus.Parent = loaderFrame
-	addCorner(loaderStatus, 6)
-
-	local historyLabel = Instance.new("TextLabel")
-	historyLabel.Name = "HistoryLabel"
-	historyLabel.Size = UDim2.new(1, -20, 0, 18)
-	historyLabel.Position = UDim2.new(0, 10, 0, 176)
-	historyLabel.BackgroundColor3 = THEME.dark
-	historyLabel.Text = "History:"
-	historyLabel.TextColor3 = THEME.purple
-	historyLabel.TextSize = 11
-	historyLabel.Font = Enum.Font.GothamBold
-	historyLabel.TextXAlignment = Enum.TextXAlignment.Left
-	historyLabel.Parent = loaderFrame
-
-	local historyList = Instance.new("ScrollingFrame")
-	historyList.Name = "HistoryList"
-	historyList.Size = UDim2.new(1, -20, 0, 34)
-	historyList.Position = UDim2.new(0, 10, 0, 194)
-	historyList.BackgroundTransparency = 1
-	historyList.BorderSizePixel = 0
-	historyList.ScrollBarThickness = 4
-	historyList.CanvasSize = UDim2.new(0, 0, 0, 0)
-	historyList.Parent = loaderFrame
-
-	local historyLayout = Instance.new("UIListLayout")
-	historyLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	historyLayout.Padding = UDim.new(0, 2)
-	historyLayout.Parent = historyList
-
 	local function refreshHistory()
 		for _, child in ipairs(historyList:GetChildren()) do
 			if child:IsA("TextButton") then child:Destroy() end
@@ -489,8 +1329,8 @@ local buildOk, buildErr = pcall(function()
 		for i, url in ipairs(urlHistory) do
 			local entry = Instance.new("TextButton")
 			entry.Name = "Entry" .. i
-			entry.Size = UDim2.new(1, 0, 0, 20)
-			entry.BackgroundColor3 = THEME.darker
+			entry.Size = UDim2.new(1, 0, 0, 18)
+			entry.BackgroundColor3 = Color3.fromRGB(26, 26, 32)
 			entry.Text = url
 			entry.TextColor3 = THEME.text
 			entry.TextSize = 10
@@ -503,7 +1343,7 @@ local buildOk, buildErr = pcall(function()
 				urlBox.Text = url
 			end)
 		end
-		historyList.CanvasSize = UDim2.new(0, 0, 0, #urlHistory * 22)
+		historyList.CanvasSize = UDim2.new(0, 0, 0, #urlHistory * 20)
 	end
 	refreshHistory()
 
@@ -558,102 +1398,10 @@ local buildOk, buildErr = pcall(function()
 	urlBox.FocusLost:Connect(function(enterPressed)
 		if enterPressed then executeUrl(urlBox.Text) end
 	end)
-	loaderClose.MouseButton1Click:Connect(function()
-		loaderFrame.Visible = false
-	end)
 
 	setBoot("Script loader ready")
 
-	-- ============================================================
-	-- Section 5: Inventory GUI
-	-- ============================================================
-
-	local invFrame = Instance.new("Frame")
-	invFrame.Name = "InventoryFrame"
-	invFrame.Size = UDim2.new(0, 200, 0, 210)
-	invFrame.Position = UDim2.new(1, -560, 1, -230)
-	invFrame.BackgroundColor3 = THEME.dark
-	invFrame.BorderSizePixel = 0
-	invFrame.Active = true
-	invFrame.Draggable = true
-	invFrame.Visible = false
-	invFrame.Parent = PARENT
-	addCorner(invFrame, 10)
-	addStroke(invFrame, THEME.purple, 2)
-
-	local invTitle = Instance.new("TextLabel")
-	invTitle.Name = "Title"
-	invTitle.Size = UDim2.new(1, 0, 0, 35)
-	invTitle.BackgroundColor3 = THEME.light
-	invTitle.Text = "INVENTORY (0)"
-	invTitle.TextColor3 = THEME.accent
-	invTitle.TextSize = 14
-	invTitle.Font = Enum.Font.GothamBold
-	invTitle.Parent = invFrame
-	addCorner(invTitle, 10)
-
-	local invClose = Instance.new("TextButton")
-	invClose.Name = "CloseButton"
-	invClose.Size = UDim2.new(0, 22, 0, 22)
-	invClose.Position = UDim2.new(1, -28, 0, 6)
-	invClose.BackgroundColor3 = THEME.dark
-	invClose.Text = "X"
-	invClose.TextColor3 = THEME.red
-	invClose.TextSize = 12
-	invClose.Font = Enum.Font.GothamBold
-	invClose.Parent = invTitle
-	addCorner(invClose, 6)
-
-	local invList = Instance.new("ScrollingFrame")
-	invList.Name = "List"
-	invList.Size = UDim2.new(1, -20, 1, -55)
-	invList.Position = UDim2.new(0, 10, 0, 45)
-	invList.BackgroundTransparency = 1
-	invList.BorderSizePixel = 0
-	invList.ScrollBarThickness = 4
-	invList.CanvasSize = UDim2.new(0, 0, 0, 0)
-	invList.Parent = invFrame
-
-	local invLayout = Instance.new("UIListLayout")
-	invLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	invLayout.Padding = UDim.new(0, 2)
-	invLayout.Parent = invList
-
-	local function refreshInventory()
-		for _, child in ipairs(invList:GetChildren()) do
-			if child:IsA("TextLabel") then child:Destroy() end
-		end
-		for i, name in ipairs(inventory) do
-			local row = Instance.new("TextLabel")
-			row.Name = "Row" .. i
-			row.Size = UDim2.new(1, 0, 0, 20)
-			row.BackgroundColor3 = THEME.darker
-			row.Text = i .. ". " .. name .. " [MYTHICAL]"
-			row.TextColor3 = THEME.text
-			row.TextSize = 11
-			row.Font = Enum.Font.Gotham
-			row.TextXAlignment = Enum.TextXAlignment.Left
-			row.Parent = invList
-			addCorner(row, 4)
-		end
-		invList.CanvasSize = UDim2.new(0, 0, 0, #inventory * 22)
-		invTitle.Text = "INVENTORY (" .. #inventory .. ")"
-	end
-
-	invClose.MouseButton1Click:Connect(function()
-		invFrame.Visible = false
-	end)
-
-	-- ============================================================
-	-- Section 6: Commands & Handlers
-	-- ============================================================
-
-	loaderBtn.MouseButton1Click:Connect(function()
-		loaderFrame.Visible = not loaderFrame.Visible
-	end)
-	invBtn.MouseButton1Click:Connect(function()
-		invFrame.Visible = not invFrame.Visible
-	end)
+	-- ============ GAME LOGIC ============
 
 	local backpack = player:WaitForChild("Backpack", 15) or Instance.new("Backpack")
 
@@ -707,23 +1455,76 @@ local buildOk, buildErr = pcall(function()
 		return false
 	end
 
-	local function doGacha()
-		if localBeli < ROLL_COST then
-			setOutput("Insufficient Beli!\nCost: 100,000 | Balance: " .. tostring(localBeli), THEME.red)
-			return
+	local function setOutput(text, color)
+		outputLabel.Text = text
+		outputLabel.TextColor3 = color or THEME.text
+	end
+
+	local function updateStats()
+		local function setVal(k, v)
+			if statValues[k] then statValues[k].Text = v end
 		end
-		localBeli = localBeli - ROLL_COST
+		setVal("beli", tostring(localBeli))
+		setVal("luck", tostring(currentLuck) .. "x")
+		setVal("inv", tostring(#inventory))
+		headerBeli.Text = "BELI: " .. tostring(localBeli)
+		if invTitleLabel then invTitleLabel.Text = "INVENTORY (" .. #inventory .. ")  -  FREE ROLLS" end
+	end
+
+	local function spinFlash()
+		task.spawn(function()
+			pcall(function()
+				local seq = { THEME.accent, Color3.fromRGB(255, 50, 50), Color3.fromRGB(180, 100, 255), Color3.fromRGB(50, 255, 180) }
+				for i = 1, 10 do
+					outputLabel.UIStroke.Color = seq[(i % #seq) + 1]
+					outputLabel.UIStroke.Thickness = 3
+					task.wait(0.06)
+				end
+				outputLabel.UIStroke.Color = THEME.purple
+				outputLabel.UIStroke.Thickness = 1
+			end)
+		end)
+	end
+
+	local function refreshInventory()
+		for _, child in ipairs(invList:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		for i, name in ipairs(inventory) do
+			local row = Instance.new("TextButton")
+			row.Name = "Row" .. i
+			row.Size = UDim2.new(1, 0, 0, 24)
+			row.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
+			row.Text = i .. ".  " .. name .. "   [MYTHICAL]"
+			row.TextColor3 = THEME.text
+			row.TextSize = 12
+			row.Font = Enum.Font.Gotham
+			row.TextXAlignment = Enum.TextXAlignment.Left
+			row.TextTruncate = Enum.TextTruncate.AtEnd
+			row.Parent = invList
+			addCorner(row, 5)
+			row.MouseButton1Click:Connect(function()
+				giveFruitToInventory(name)
+				setOutput("Re-gave " .. name .. " to your inventory!", THEME.accent)
+			end)
+		end
+		invList.CanvasSize = UDim2.new(0, 0, 0, #inventory * 26)
+		updateStats()
+	end
+
+	local function doGacha()
 		local result = rollFruit()
 		table.insert(inventory, result.Name)
 		giveFruitToInventory(result.Name)
-		beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
-		setOutput("SPIN RESULT: " .. result.Name .. "\nRarity: " .. result.Rarity .. "\nGIVEN TO YOUR INVENTORY!", THEME.accent)
+		updateStats()
+		spinFlash()
+		setOutput("SPIN RESULT: " .. result.Name .. "\nRarity: " .. result.Rarity .. "\nFREE ROLL - ADDED TO YOUR INVENTORY!", THEME.accent)
 		refreshInventory()
 	end
 
 	local function showInventory()
 		if #inventory == 0 then
-			setOutput("Inventory is empty.\nUse ;roll to spin!", THEME.text)
+			setOutput("Inventory is empty.\nUse the SPIN button to roll!", THEME.text)
 		else
 			local lines = {}
 			for i, name in ipairs(inventory) do
@@ -733,16 +1534,16 @@ local buildOk, buildErr = pcall(function()
 		end
 	end
 
-	cmdBox.FocusLost:Connect(function(enterPressed)
-		if not enterPressed then return end
-		local text = cmdBox.Text
-		cmdBox.Text = ""
-		local command = text:lower()
+	rollBtn.MouseButton1Click:Connect(doGacha)
+
+	local function processCommand(text)
+		local command = (text or ""):lower()
 
 		if command:sub(1, 7) == ";speed " then
 			local speedVal = tonumber(text:sub(8))
 			if speedVal and player.Character and player.Character:FindFirstChild("Humanoid") then
 				player.Character.Humanoid.WalkSpeed = speedVal
+				applySuperSpeed(false)
 				setOutput("Command Executed:\nWalkSpeed set to " .. tostring(speedVal), THEME.accent)
 			else
 				setOutput("Invalid speed or no character.", THEME.red)
@@ -760,7 +1561,7 @@ local buildOk, buildErr = pcall(function()
 			doGacha()
 
 		elseif command == ";inv" or command == ";inventory" then
-			invFrame.Visible = true
+			goTab("Items")
 			showInventory()
 
 		elseif command == ";clearinv" then
@@ -772,7 +1573,7 @@ local buildOk, buildErr = pcall(function()
 			local v = tonumber(text:sub(8))
 			if v and v > 0 then
 				currentLuck = v
-				beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+				updateStats()
 				setOutput("Luck multiplier set to " .. tostring(v) .. "x", THEME.accent)
 			else
 				setOutput("Usage: ;luck <number>", THEME.red)
@@ -782,32 +1583,44 @@ local buildOk, buildErr = pcall(function()
 			local v = tonumber(text:sub(9))
 			if v then
 				localBeli = localBeli + v
-				beliLabel.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+				updateStats()
 				setOutput("Added " .. tostring(v) .. " Beli.\nBalance: " .. tostring(localBeli), THEME.accent)
 			else
 				setOutput("Usage: ;addbeli <number>", THEME.red)
 			end
 
 		elseif command == ";beli" then
-			setOutput("Balance: " .. tostring(localBeli) .. " Beli", THEME.text)
+			setOutput("FREE ROLLS ENABLED\nBeli balance: " .. tostring(localBeli) .. " (cosmetic only)", THEME.text)
 
 		elseif command:sub(1, 6) == ";give " then
 			local fruitName = text:sub(7)
 			if fruitName and fruitName ~= "" then
 				giveFruitToInventory(fruitName)
-				table.insert(inventory, fruitName)
+				if not table.find(inventory, fruitName) then table.insert(inventory, fruitName) end
 				refreshInventory()
-				setOutput("Gave " .. fruitName .. "\nto your inventory!", THEME.accent)
+				setOutput("Gave " .. fruitName .. "\nto your inventory (FREE)!", THEME.accent)
 			else
 				setOutput("Usage: ;give <FruitName>", THEME.red)
 			end
 
 		elseif command == ";help" then
-			setOutput(";speed <n>  |  ;reset\n;roll  |  ;inv  |  ;clearinv\n;luck <n>  |  ;addbeli <n>\n;give <fruit>  |  ;beli\n;help", THEME.text)
+			setOutput(";speed <n>  |  ;reset\n;roll (FREE)  |  ;inv  |  ;clearinv\n;luck <n>  |  ;addbeli <n>\n;give <fruit>  |  ;beli\n;help", THEME.text)
 
 		else
-			setOutput("Unknown Command: " .. text, THEME.red)
+			setOutput("Unknown Command: " .. tostring(text), THEME.red)
 		end
+	end
+
+	cmdBox.FocusLost:Connect(function(enterPressed)
+		if not enterPressed then return end
+		local text = cmdBox.Text
+		cmdBox.Text = ""
+		processCommand(text)
+	end)
+	runBtn.MouseButton1Click:Connect(function()
+		local text = cmdBox.Text
+		cmdBox.Text = ""
+		processCommand(text)
 	end)
 
 	-- ============================================================
@@ -815,7 +1628,7 @@ local buildOk, buildErr = pcall(function()
 	-- ============================================================
 
 	local function onChatTrigger()
-		doGacha()
+		if chatEnabled then doGacha() end
 	end
 
 	pcall(function()
@@ -844,22 +1657,48 @@ local buildOk, buildErr = pcall(function()
 		end)
 	end)
 
-	setOutput("PRO Admin System Active.\nCreated by: " .. player.Name, THEME.accent)
+	-- ============================================================
+	-- Section 8: Live FPS/Ping + Show/hide hotkey
+	-- ============================================================
 
-	-- ============================================================
-	-- Section 8: Show/hide hotkey (Right Alt)
-	-- ============================================================
+	pcall(function()
+		local statsService = game:GetService("Stats")
+		local fpsFrames = 0
+		RunService.Heartbeat:Connect(function()
+			fpsFrames = fpsFrames + 1
+		end)
+		task.spawn(function()
+			while true do
+				task.wait(0.5)
+				local fps = fpsFrames * 2
+				fpsFrames = 0
+				local ping = "N/A"
+				pcall(function()
+					local item = statsService.Network.ServerStatsItem["Data Ping"]
+					if item then ping = tostring(math.floor(item:GetValue())) end
+				end)
+				headerFps.Text = "FPS: " .. tostring(fps)
+				headerPing.Text = "PING: " .. ping .. "ms"
+				if statValues.fps then statValues.fps.Text = tostring(fps) end
+				if statValues.ping then statValues.ping.Text = ping .. "ms" end
+			end
+		end)
+	end)
 
 	pcall(function()
 		UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if gameProcessed then return end
-			if input.KeyCode == Enum.KeyCode.RightAlt then
+			if hotkeyEnabled and input.KeyCode == Enum.KeyCode.RightAlt then
 				PARENT.Enabled = not PARENT.Enabled
 			end
 		end)
 	end)
 
-	setBoot("MYTHIC FRUIT SCRIPT LOADED - admin bar is bottom-right", false)
+	updateStats()
+	refreshInventory()
+	goTab("Info")
+
+	setBoot("MYTHIC HUB LOADED - use RightAlt to toggle", false)
 
 	task.delay(4, function()
 		if bootStatus and bootStatus.Parent then
