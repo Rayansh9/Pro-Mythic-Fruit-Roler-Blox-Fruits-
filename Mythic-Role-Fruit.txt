@@ -1,22 +1,603 @@
 -- ============================================================
---  MYTHIC-ROLE-FRUIT  v2.0  (MYTHIC HUB)
---  Modern Hub UI + Mythical-Only Gacha + Script Loader
---  Paste this into your executor and run. (Delta ready)
--- ============================================================
-
--- ============================================================
--- Section 1: Compatibility bootstrap + re-run guard
+--  MYTHIC HUB - BLOX FRUITS EDITION
+--  Mythical-Only Gacha + Loader GUI + Modern Pro Admin Bar
 -- ============================================================
 
 local genv = getgenv or _G
-if genv.PRO_ADMIN_LOADED then
-	print("[MythicFruit] Re-run detected - rebuilding GUI")
-end
-genv.PRO_ADMIN_LOADED = true
+if genv.MYTHIC_HUB_LOADED then return end
+genv.MYTHIC_HUB_LOADED = true
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local function missing(t, f, fallback)
 	if type(f) == t then return f end
+	return fallback
+end
+
+cloneref = missing("function", cloneref, function(...) return ... end)
+httprequest = missing("function", request or http_request or (syn and syn.request) or (http and http.request) or (fluxus and fluxus.request))
+waxwritefile, waxreadfile = writefile, readfile
+writefile = missing("function", waxwritefile) and function(file, data, safe)
+	if safe == true then return pcall(waxwritefile, file, data) end
+	waxwritefile(file, data)
+end
+readfile = missing("function", waxreadfile) and function(file, safe)
+	if safe == true then return pcall(waxreadfile, file) end
+	return waxreadfile(file)
+end
+isfile = missing("function", isfile, readfile and function(file)
+	local success, result = pcall(function()
+		return readfile(file)
+	end)
+	return success and result ~= nil and result ~= ""
+end)
+makefolder = missing("function", makefolder)
+isfolder = missing("function", isfolder)
+
+Services = setmetatable({}, {
+	__index = function(self, name)
+		local success, cache = pcall(function()
+			return cloneref(game:GetService(name))
+		end)
+		if success then
+			rawset(self, name, cache)
+			return cache
+		else
+			error("Invalid Service: " .. tostring(name))
+		end
+	end
+})
+
+Players = Services.Players
+UserInputService = Services.UserInputService
+TweenService = Services.TweenService
+HttpService = Services.HttpService
+RunService = Services.RunService
+ReplicatedStorage = Services.ReplicatedStorage
+TextChatService = Services.TextChatService
+CoreGuiService = Services.CoreGui
+
+local player = Players.LocalPlayer
+if not player then
+	repeat task.wait() until Players.LocalPlayer
+	player = Players.LocalPlayer
+end
+local playerGui = cloneref(player:FindFirstChildWhichIsA("PlayerGui") or player:WaitForChild("PlayerGui", 10))
+
+-- Safe GUI Parent Detection
+local PARENT
+do
+	local ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "MythicHubUI"
+	ScreenGui.ResetOnSpawn = false
+	ScreenGui.DisplayOrder = 999999999
+
+	local gethuiFunc = typeof(gethui) == "function" and gethui or (typeof(get_hidden_gui) == "function" and get_hidden_gui or nil)
+	if gethuiFunc then
+		ScreenGui.Parent = gethuiFunc()
+	elseif syn and syn.protect_gui then
+		syn.protect_gui(ScreenGui)
+		ScreenGui.Parent = CoreGuiService
+	elseif CoreGuiService then
+		ScreenGui.Parent = CoreGuiService
+	else
+		ScreenGui.Parent = playerGui
+	end
+	PARENT = ScreenGui
+end
+
+-- Theme Palette (Zen/Mythic Dark Purple Style)
+local THEME = {
+	bg       = Color3.fromRGB(18, 14, 28),
+	darker   = Color3.fromRGB(12, 9, 20),
+	card     = Color3.fromRGB(26, 20, 38),
+	accent   = Color3.fromRGB(180, 100, 255),
+	cyan     = Color3.fromRGB(0, 255, 230),
+	text     = Color3.fromRGB(220, 200, 255),
+	subtext  = Color3.fromRGB(150, 130, 180),
+	white    = Color3.fromRGB(255, 255, 255),
+	red      = Color3.fromRGB(255, 80, 80),
+	green    = Color3.fromRGB(80, 255, 120),
+}
+
+local function addCorner(parent, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius or 6)
+	c.Parent = parent
+end
+
+local function addStroke(parent, color, thickness)
+	local s = Instance.new("UIStroke")
+	s.Color = color or THEME.accent
+	s.Thickness = thickness or 1
+	s.Parent = parent
+end
+
+-- ============================================================
+-- Gacha & Inventory Logic
+-- ============================================================
+
+local HIGH_TIER_POOL = {
+	{ Name = "Gravity",   Rarity = "Mythical", BaseWeight = 8 },
+	{ Name = "Mammoth",   Rarity = "Mythical", BaseWeight = 7 },
+	{ Name = "T-Rex",     Rarity = "Mythical", BaseWeight = 6 },
+	{ Name = "Dough",     Rarity = "Mythical", BaseWeight = 5 },
+	{ Name = "Shadow",    Rarity = "Mythical", BaseWeight = 5 },
+	{ Name = "Venom",     Rarity = "Mythical", BaseWeight = 4 },
+	{ Name = "Gas",       Rarity = "Mythical", BaseWeight = 4 },
+	{ Name = "Spirit",    Rarity = "Mythical", BaseWeight = 3 },
+	{ Name = "Tiger",     Rarity = "Mythical", BaseWeight = 3 },
+	{ Name = "Yeti",      Rarity = "Mythical", BaseWeight = 2 },
+	{ Name = "Kitsune",   Rarity = "Mythical", BaseWeight = 1 },
+	{ Name = "Control",   Rarity = "Mythical", BaseWeight = 1 },
+	{ Name = "Dragon",    Rarity = "Mythical", BaseWeight = 1 },
+}
+
+local LUCK_MULTIPLIER = 100
+local currentLuck = 1 * LUCK_MULTIPLIER
+local ROLL_COST = 100000
+local localBeli = 1000000
+local inventory = {}
+
+local function rollFruit()
+	local adjustedPool = {}
+	local totalWeight = 0
+	for _, fruit in ipairs(HIGH_TIER_POOL) do
+		local weight = fruit.BaseWeight * currentLuck
+		totalWeight = totalWeight + weight
+		table.insert(adjustedPool, { Name = fruit.Name, Rarity = fruit.Rarity, Weight = weight })
+	end
+	local randomRoll = math.random() * totalWeight
+	local weightCounter = 0
+	for _, fruit in ipairs(adjustedPool) do
+		weightCounter = weightCounter + fruit.Weight
+		if randomRoll <= weightCounter then
+			return fruit
+		end
+	end
+	return HIGH_TIER_POOL[1]
+end
+
+local backpack = player:WaitForChild("Backpack", 10) or Instance.new("Backpack")
+
+local function createFruitTool(fruitName)
+	local tool = Instance.new("Tool")
+	tool.Name = fruitName
+	tool.RequiresHandle = false
+	tool.CanBeDropped = true
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(1.2, 1.2, 1.2)
+	handle.Material = Enum.Material.Neon
+	handle.Color = THEME.accent
+	handle.CanCollide = false
+	handle.Parent = tool
+	
+	local fruitLabel = Instance.new("BillboardGui")
+	fruitLabel.Size = UDim2.new(0, 6, 0, 1.5)
+	fruitLabel.StudsOffset = Vector3.new(0, 1.5, 0)
+	fruitLabel.AlwaysOnTop = true
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = fruitName
+	label.TextColor3 = THEME.cyan
+	label.TextSize = 14
+	label.Font = Enum.Font.GothamBold
+	label.Parent = fruitLabel
+	fruitLabel.Parent = handle
+	
+	tool.Parent = backpack
+	return tool
+end
+
+local function giveFruitToInventory(fruitName)
+	createFruitTool(fruitName)
+end
+
+-- ============================================================
+-- Main UI Frame Structure
+-- ============================================================
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 520, 0, 320)
+mainFrame.Position = UDim2.new(0.5, -260, 0.5, -160)
+mainFrame.BackgroundColor3 = THEME.bg
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = PARENT
+addCorner(mainFrame, 10)
+addStroke(mainFrame, THEME.accent, 2)
+
+-- Top Header Bar
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 38)
+topBar.BackgroundColor3 = THEME.darker
+topBar.Parent = mainFrame
+addCorner(topBar, 10)
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(0, 200, 1, 0)
+titleLabel.Position = UDim2.new(0, 12, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "MYTHIC HUB v2.0"
+titleLabel.TextColor3 = THEME.accent
+titleLabel.TextSize = 15
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = topBar
+
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Name = "Info"
+infoLabel.Size = UDim2.new(0, 200, 1, 0)
+infoLabel.Position = UDim2.new(1, -240, 0, 0)
+infoLabel.BackgroundTransparency = 1
+infoLabel.Text = "(Ping: 45ms | FPS: 60)"
+infoLabel.TextColor3 = THEME.subtext
+infoLabel.TextSize = 11
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.TextXAlignment = Enum.TextXAlignment.Right
+infoLabel.Parent = topBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "CloseBtn"
+closeBtn.Size = UDim2.new(0, 26, 0, 26)
+closeBtn.Position = UDim2.new(1, -32, 0, 6)
+closeBtn.BackgroundColor3 = THEME.card
+closeBtn.Text = "X"
+closeBtn.TextColor3 = THEME.red
+closeBtn.TextSize = 12
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = topBar
+addCorner(closeBtn, 6)
+
+-- Sidebar Tabs Navigation
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2.new(0, 120, 1, -48)
+sidebar.Position = UDim2.new(0, 8, 0, 42)
+sidebar.BackgroundColor3 = THEME.darker
+sidebar.Parent = mainFrame
+addCorner(sidebar, 8)
+
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sidebarLayout.Padding = UDim.new(0, 4)
+sidebarLayout.Parent = sidebar
+
+-- Content Area
+local container = Instance.new("Frame")
+container.Name = "Container"
+container.Size = UDim2.new(1, -142, 1, -48)
+container.Position = UDim2.new(0, 134, 0, 42)
+container.BackgroundColor3 = THEME.darker
+container.Parent = mainFrame
+addCorner(container, 8)
+
+-- Dynamic Tab Pages Container
+local pages = {}
+
+local function createTab(name, iconText)
+	local btn = Instance.new("TextButton")
+	btn.Name = name .. "Tab"
+	btn.Size = UDim2.new(1, -8, 0, 32)
+	btn.Position = UDim2.new(0, 4, 0, 0)
+	btn.BackgroundColor3 = THEME.card
+	btn.Text = (iconText or "•") .. "  " .. name
+	btn.TextColor3 = THEME.subtext
+	btn.TextSize = 12
+	btn.Font = Enum.Font.GothamBold
+	btn.TextXAlignment = Enum.TextXAlignment.Left
+	btn.Parent = sidebar
+	addCorner(btn, 6)
+
+	local page = Instance.new("ScrollingFrame")
+	page.Name = name .. "Page"
+	page.Size = UDim2.new(1, -12, 1, -12)
+	page.Position = UDim2.new(0, 6, 0, 6)
+	page.BackgroundTransparency = 1
+	page.BorderSizePixel = 0
+	page.ScrollBarThickness = 4
+	page.Visible = false
+	page.Parent = container
+
+	local pageLayout = Instance.new("UIListLayout")
+	pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	pageLayout.Padding = UDim.new(0, 6)
+	pageLayout.Parent = page
+
+	pages[name] = { Button = btn, Page = page }
+
+	btn.MouseButton1Click:Connect(function()
+		for _, p in pairs(pages) do
+			p.Page.Visible = false
+			p.Button.BackgroundColor3 = THEME.card
+			p.Button.TextColor3 = THEME.subtext
+		end
+		page.Visible = true
+		btn.BackgroundColor3 = THEME.accent
+		btn.TextColor3 = THEME.white
+	end)
+
+	return page
+end
+
+-- Create Hub Tabs
+local mainPage = createTab("Admin Bar", "[>]")
+local gachaPage = createTab("Gacha Roll", "[*]")
+local invPage = createTab("Inventory", "[#]")
+local loaderPage = createTab("Script Loader", "[~]")
+
+-- Set Default Active Tab
+pages["Admin Bar"].Page.Visible = true
+pages["Admin Bar"].Button.BackgroundColor3 = THEME.accent
+pages["Admin Bar"].Button.TextColor3 = THEME.white
+
+-- Close Button Action
+closeBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+end)
+
+-- ============================================================
+-- Section Components Helpers
+-- ============================================================
+
+local function addSectionHeader(page, title)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 20)
+	label.BackgroundTransparency = 1
+	label.Text = "// " .. title .. " \\\\"
+	label.TextColor3 = THEME.accent
+	label.TextSize = 11
+	label.Font = Enum.Font.GothamBold
+	label.Parent = page
+end
+
+-- ============================================================
+-- Page 1: Admin Commands
+-- ============================================================
+
+addSectionHeader(mainPage, "Command Console")
+
+local cmdBox = Instance.new("TextBox")
+cmdBox.Size = UDim2.new(1, 0, 0, 34)
+cmdBox.BackgroundColor3 = THEME.card
+cmdBox.Text = ""
+cmdBox.PlaceholderText = "Type command (e.g. ;speed 50, ;roll, ;help)..."
+cmdBox.PlaceholderColor3 = THEME.subtext
+cmdBox.TextColor3 = THEME.white
+cmdBox.TextSize = 12
+cmdBox.Font = Enum.Font.Gotham
+cmdBox.Parent = mainPage
+addCorner(cmdBox, 6)
+addStroke(cmdBox, THEME.accent, 1)
+
+local outputLabel = Instance.new("TextLabel")
+outputLabel.Size = UDim2.new(1, 0, 0, 100)
+outputLabel.BackgroundColor3 = THEME.card
+outputLabel.Text = "Mythic Admin System Active.\nUser: " .. player.Name
+outputLabel.TextColor3 = THEME.text
+outputLabel.TextSize = 11
+outputLabel.Font = Enum.Font.Gotham
+outputLabel.TextWrapped = true
+outputLabel.TextXAlignment = Enum.TextXAlignment.Left
+outputLabel.TextYAlignment = Enum.TextYAlignment.Top
+outputLabel.Parent = mainPage
+addCorner(outputLabel, 6)
+
+local function setOutput(text, color)
+	outputLabel.Text = text
+	outputLabel.TextColor3 = color or THEME.text
+end
+
+-- ============================================================
+-- Page 2: Mythical Gacha
+-- ============================================================
+
+addSectionHeader(gachaPage, "Gacha Controls")
+
+local statusBeli = Instance.new("TextLabel")
+statusBeli.Size = UDim2.new(1, 0, 0, 25)
+statusBeli.BackgroundColor3 = THEME.card
+statusBeli.Text = "Beli: 1,000,000  |  Luck: 100x"
+statusBeli.TextColor3 = THEME.cyan
+statusBeli.TextSize = 12
+statusBeli.Font = Enum.Font.GothamBold
+statusBeli.Parent = gachaPage
+addCorner(statusBeli, 6)
+
+local rollBtn = Instance.new("TextButton")
+rollBtn.Size = UDim2.new(1, 0, 0, 36)
+rollBtn.BackgroundColor3 = THEME.accent
+rollBtn.Text = "SPIN MYTHICAL FRUIT (100k Beli)"
+rollBtn.TextColor3 = THEME.white
+rollBtn.TextSize = 12
+rollBtn.Font = Enum.Font.GothamBold
+rollBtn.Parent = gachaPage
+addCorner(rollBtn, 6)
+
+local gachaOutput = Instance.new("TextLabel")
+gachaOutput.Size = UDim2.new(1, 0, 0, 60)
+gachaOutput.BackgroundColor3 = THEME.card
+gachaOutput.Text = "Spin results will appear here."
+gachaOutput.TextColor3 = THEME.subtext
+gachaOutput.TextSize = 11
+gachaOutput.Font = Enum.Font.Gotham
+gachaOutput.Parent = gachaPage
+addCorner(gachaOutput, 6)
+
+local function doGacha()
+	if localBeli < ROLL_COST then
+		gachaOutput.Text = "Insufficient Beli! Requires 100,000 Beli."
+		gachaOutput.TextColor3 = THEME.red
+		return
+	end
+	localBeli = localBeli - ROLL_COST
+	local result = rollFruit()
+	table.insert(inventory, result.Name)
+	giveFruitToInventory(result.Name)
+	statusBeli.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+	gachaOutput.Text = "SPUN: " .. result.Name .. " [" .. result.Rarity .. "]\nAdded to Backpack!"
+	gachaOutput.TextColor3 = THEME.cyan
+end
+
+rollBtn.MouseButton1Click:Connect(doGacha)
+
+-- ============================================================
+-- Page 3: Inventory
+-- ============================================================
+
+addSectionHeader(invPage, "Inventory Items")
+
+local invList = Instance.new("Frame")
+invList.Size = UDim2.new(1, 0, 0, 180)
+invList.BackgroundTransparency = 1
+invList.Parent = invPage
+
+local invLayout = Instance.new("UIListLayout")
+invLayout.SortOrder = Enum.SortOrder.LayoutOrder
+invLayout.Padding = UDim.new(0, 4)
+invLayout.Parent = invList
+
+local function refreshInventory()
+	for _, child in ipairs(invList:GetChildren()) do
+		if child:IsA("TextLabel") then child:Destroy() end
+	end
+	for i, name in ipairs(inventory) do
+		local row = Instance.new("TextLabel")
+		row.Size = UDim2.new(1, 0, 0, 22)
+		row.BackgroundColor3 = THEME.card
+		row.Text = " " .. i .. ". " .. name .. " [MYTHICAL]"
+		row.TextColor3 = THEME.text
+		row.TextSize = 11
+		row.Font = Enum.Font.Gotham
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.Parent = invList
+		addCorner(row, 4)
+	end
+end
+
+-- ============================================================
+-- Page 4: Script Loader
+-- ============================================================
+
+addSectionHeader(loaderPage, "Remote URL Loader")
+
+local urlBox = Instance.new("TextBox")
+urlBox.Size = UDim2.new(1, 0, 0, 32)
+urlBox.BackgroundColor3 = THEME.card
+urlBox.Text = ""
+urlBox.PlaceholderText = "Paste script raw URL..."
+urlBox.PlaceholderColor3 = THEME.subtext
+urlBox.TextColor3 = THEME.white
+urlBox.TextSize = 11
+urlBox.Font = Enum.Font.Gotham
+urlBox.Parent = loaderPage
+addCorner(urlBox, 6)
+
+local execBtn = Instance.new("TextButton")
+execBtn.Size = UDim2.new(1, 0, 0, 32)
+execBtn.BackgroundColor3 = THEME.accent
+execBtn.Text = "EXECUTE SCRIPT"
+execBtn.TextColor3 = THEME.white
+execBtn.TextSize = 12
+execBtn.Font = Enum.Font.GothamBold
+execBtn.Parent = loaderPage
+addCorner(execBtn, 6)
+
+local loaderStatus = Instance.new("TextLabel")
+loaderStatus.Size = UDim2.new(1, 0, 0, 40)
+loaderStatus.BackgroundColor3 = THEME.card
+loaderStatus.Text = "Status: Ready"
+loaderStatus.TextColor3 = THEME.subtext
+loaderStatus.TextSize = 11
+loaderStatus.Font = Enum.Font.Gotham
+loaderStatus.Parent = loaderPage
+addCorner(loaderStatus, 6)
+
+execBtn.MouseButton1Click:Connect(function()
+	local url = urlBox.Text
+	if not url or url == "" then
+		loaderStatus.Text = "Status: No URL entered."
+		loaderStatus.TextColor3 = THEME.red
+		return
+	end
+	loaderStatus.Text = "Status: Fetching..."
+	local fetchSuccess, chunk = pcall(function() return game:HttpGet(url) end)
+	if not fetchSuccess then
+		loaderStatus.Text = "Status: HTTP Fetch Error"
+		loaderStatus.TextColor3 = THEME.red
+		return
+	end
+	local loadSuccess, loaded = pcall(loadstring, chunk)
+	if not loadSuccess then
+		loaderStatus.Text = "Status: Compile Error"
+		loaderStatus.TextColor3 = THEME.red
+		return
+	end
+	local runSuccess, err = pcall(loaded)
+	if runSuccess then
+		loaderStatus.Text = "Status: Executed successfully!"
+		loaderStatus.TextColor3 = THEME.cyan
+	else
+		loaderStatus.Text = "Status: Runtime Error\n" .. tostring(err)
+		loaderStatus.TextColor3 = THEME.red
+	end
+end)
+
+-- ============================================================
+-- Console Input Commands
+-- ============================================================
+
+cmdBox.FocusLost:Connect(function(enterPressed)
+	if not enterPressed then return end
+	local text = cmdBox.Text
+	cmdBox.Text = ""
+	local command = text:lower()
+
+	if command:sub(1, 7) == ";speed " then
+		local speedVal = tonumber(text:sub(8))
+		if speedVal and player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = speedVal
+			setOutput("Executed: WalkSpeed set to " .. speedVal, THEME.cyan)
+		end
+	elseif command == ";reset" then
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.Health = 0
+			setOutput("Executed: Reset character", THEME.cyan)
+		end
+	elseif command == ";roll" or command == ";spin" then
+		doGacha()
+	elseif command == ";inv" then
+		refreshInventory()
+		setOutput("Opened Inventory tab.", THEME.text)
+	elseif command:sub(1, 8) == ";addbeli" then
+		local v = tonumber(text:sub(9))
+		if v then
+			localBeli = localBeli + v
+			statusBeli.Text = "Beli: " .. tostring(localBeli) .. "  |  Luck: " .. tostring(currentLuck) .. "x"
+			setOutput("Added " .. v .. " Beli.", THEME.cyan)
+		end
+	elseif command == ";help" then
+		setOutput(";speed <n> | ;reset | ;roll | ;addbeli <n> | ;inv", THEME.text)
+	else
+		setOutput("Unknown Command: " .. text, THEME.red)
+	end
+end)
+
+-- Execute Chat Commands (!roll, !spin)
+pcall(function()
+	player.Chatted:Connect(function(msg)
+		local lower = msg:lower()
+		if lower == "!spin" or lower == "!roll" then
+			doGacha()
+		end
+	end)
+end)
+
+setOutput("Mythic Hub Active.\nCreated for: " .. player.Name, THEME.cyan)
 	return fallback
 end
 
